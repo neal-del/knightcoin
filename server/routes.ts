@@ -210,7 +210,7 @@ export async function registerRoutes(
     }
     const user = await storage.getUser(userId);
     if (!user) {
-      setCurrentUserId(req, null);
+      destroySession(req, res);
       return res.status(401).json({ error: "User not found" });
     }
     const { password: _, ...safeUser } = user;
