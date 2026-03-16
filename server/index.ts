@@ -62,8 +62,10 @@ app.use((req, res, next) => {
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 (async () => {
-  // Seed database if using PostgreSQL
+  // Run migrations and seed database if using PostgreSQL
   if (process.env.DATABASE_URL) {
+    const { runMigrations } = await import("./migrate");
+    await runMigrations();
     const { seedDatabase } = await import("./seed");
     await seedDatabase();
   }
