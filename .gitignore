@@ -1,0 +1,22 @@
+node_modules
+dist
+.DS_Store
+server/public
+vite.config.ts.*
+*.tar.gz
+
+# Environment variables (contains secrets)
+.env
+.env.local
+
+# Hardhat artifacts (can be regenerated)
+cache
+artifacts
+typechain-types
+
+# IDE
+.vscode
+.idea
+
+# Skills (local build tooling)
+skills/

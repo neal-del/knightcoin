@@ -1,0 +1,683 @@
+import type { Express } from "express";
+import { createServer, type Server } from "http";
+import { storage } from "./storage";
+import { initBlockchain, getBlockchainConfig, getOnChainBalance, verifyTransaction, isBlockchainEnabled } from "./blockchain";
+
+// Per-session user tracking (maps session token to user id)
+const sessions: Map<string, string> = new Map();
+
+function getSessionToken(req: any): string {
+  return req.headers["x-session-token"] || "default";
+}
+
+function getCurrentUserId(req: any): string | null {
+  const token = getSessionToken(req);
+  return sessions.get(token) || null;
+}
+
+function setCurrentUserId(req: any, userId: string | null) {
+  const token = getSessionToken(req);
+  if (userId) {
+    sessions.set(token, userId);
+  } else {
+    sessions.delete(token);
+  }
+}
+
+// Admin middleware
+async function requireAdmin(req: any, res: any, next: any) {
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  const user = await storage.getUser(userId);
+  if (!user || user.role !== "admin") {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  (req as any).adminUser = user;
+  next();
+}
+
+// Payout engine — settles all bets for a resolved market
+async function settleMarketBets(marketId: string, outcome: boolean) {
+  const unsettledBets = await storage.getUnsettledBetsByMarket(marketId);
+  
+  for (const bet of unsettledBets) {
+    const won = (bet.position === "yes" && outcome === true) || 
+                (bet.position === "no" && outcome === false);
+    
+    if (won) {
+      // Payout = amount / price (since price was the cost per share, payout is 1.0 per share)
+      const payout = bet.amount / bet.price;
+      await storage.settleBet(bet.id, payout);
+      await storage.updateUserBalance(bet.userId, payout);
+      
+      // Update user stats
+      const user = await storage.getUser(bet.userId);
+      if (user) {
+        await storage.updateUserStats(bet.userId, {
+          totalWinnings: user.totalWinnings + payout,
+          correctPredictions: user.correctPredictions + 1,
+        });
+      }
+      
+      await storage.createTransaction({
+        userId: bet.userId,
+        type: "payout",
+        amount: payout,
+        description: `Won ${payout.toFixed(1)} KC on "${bet.position.toUpperCase()}" bet`,
+        createdAt: new Date().toISOString(),
+      });
+    } else {
+      // Lost — payout is 0
+      await storage.settleBet(bet.id, 0);
+      
+      await storage.createTransaction({
+        userId: bet.userId,
+        type: "bet_lost",
+        amount: 0,
+        description: `Lost ${bet.amount.toFixed(1)} KC on "${bet.position.toUpperCase()}" bet`,
+        createdAt: new Date().toISOString(),
+      });
+    }
+  }
+  
+  return unsettledBets.length;
+}
+
+export async function registerRoutes(
+  httpServer: Server,
+  app: Express
+): Promise<Server> {
+
+  // ═══════════════════════════════════════════
+  // AUTH ROUTES
+  // ═══════════════════════════════════════════
+
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { username, password, displayName } = req.body;
+      if (!username || !password || !displayName) {
+        return res.status(400).json({ error: "All fields are required" });
+      }
+      const existing = await storage.getUserByUsername(username);
+      if (existing) {
+        return res.status(400).json({ error: "Username already taken" });
+      }
+      const user = await storage.createUser({ username, password, displayName });
+      
+      // Create signup bonus transaction
+      await storage.createTransaction({
+        userId: user.id,
+        type: "signup_bonus",
+        amount: 1000,
+        description: "Welcome bonus: 1000 KC",
+        createdAt: new Date().toISOString(),
+      });
+
+      setCurrentUserId(req, user.id);
+      const { password: _, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (err) {
+      res.status(500).json({ error: "Registration failed" });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      const user = await storage.getUserByUsername(username);
+      if (!user || user.password !== password) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      setCurrentUserId(req, user.id);
+      const { password: _, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (err) {
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  // Admin login (by email)
+  app.post("/api/auth/admin-login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      const user = await storage.getUserByEmail(email);
+      if (!user || user.password !== password) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      if (user.role !== "admin") {
+        return res.status(403).json({ error: "Not an admin account" });
+      }
+      setCurrentUserId(req, user.id);
+      const { password: _, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (err) {
+      res.status(500).json({ error: "Admin login failed" });
+    }
+  });
+
+  app.post("/api/auth/logout", async (req, res) => {
+    setCurrentUserId(req, null);
+    res.json({ ok: true });
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const user = await storage.getUser(userId);
+    if (!user) {
+      setCurrentUserId(req, null);
+      return res.status(401).json({ error: "User not found" });
+    }
+    const { password: _, ...safeUser } = user;
+    res.json(safeUser);
+  });
+
+  // ═══════════════════════════════════════════
+  // PUBLIC MARKET ROUTES
+  // ═══════════════════════════════════════════
+
+  app.get("/api/markets", async (_req, res) => {
+    const markets = await storage.getMarkets();
+    res.json(markets);
+  });
+
+  app.get("/api/markets/featured", async (_req, res) => {
+    const markets = await storage.getFeaturedMarkets();
+    res.json(markets);
+  });
+
+  app.get("/api/markets/category/:category", async (req, res) => {
+    const markets = await storage.getMarketsByCategory(req.params.category);
+    res.json(markets);
+  });
+
+  app.get("/api/markets/:id", async (req, res) => {
+    const market = await storage.getMarket(req.params.id);
+    if (!market) {
+      return res.status(404).json({ error: "Market not found" });
+    }
+    res.json(market);
+  });
+
+  // ═══════════════════════════════════════════
+  // BETTING ROUTES
+  // ═══════════════════════════════════════════
+
+  app.post("/api/bets", async (req, res) => {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    try {
+      const { marketId, position, amount } = req.body;
+      if (!marketId || !position || !amount) {
+        return res.status(400).json({ error: "marketId, position, and amount are required" });
+      }
+      if (amount <= 0) {
+        return res.status(400).json({ error: "Amount must be positive" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (user.balance < amount) {
+        return res.status(400).json({ error: "Insufficient KnightCoin balance" });
+      }
+
+      const market = await storage.getMarket(marketId);
+      if (!market) return res.status(404).json({ error: "Market not found" });
+      if (market.resolved) return res.status(400).json({ error: "Market already resolved" });
+
+      const price = position === "yes" ? market.yesPrice : market.noPrice;
+
+      // Create the bet
+      const bet = await storage.createBet({
+        userId,
+        marketId,
+        position,
+        amount,
+        price,
+        createdAt: new Date().toISOString(),
+      });
+
+      // Deduct balance
+      await storage.updateUserBalance(userId, -amount);
+
+      // Update user stats
+      await storage.updateUserStats(userId, { totalBets: user.totalBets + 1 });
+
+      // Move market price based on bet (simple LMSR-like movement)
+      const impact = Math.min(amount / 1000, 0.05); // max 5% move per bet
+      let newYesPrice: number;
+      let newNoPrice: number;
+      if (position === "yes") {
+        newYesPrice = Math.min(0.95, market.yesPrice + impact);
+        newNoPrice = Math.max(0.05, 1 - newYesPrice);
+      } else {
+        newNoPrice = Math.min(0.95, market.noPrice + impact);
+        newYesPrice = Math.max(0.05, 1 - newNoPrice);
+      }
+      await storage.updateMarketPrice(marketId, newYesPrice, newNoPrice, amount);
+
+      // Log transaction
+      await storage.createTransaction({
+        userId,
+        type: "bet_placed",
+        amount: -amount,
+        description: `Bet ${amount} KC on "${position.toUpperCase()}" for "${market.title}"`,
+        createdAt: new Date().toISOString(),
+      });
+
+      res.json(bet);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to place bet" });
+    }
+  });
+
+  app.get("/api/bets/user", async (req, res) => {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const bets = await storage.getBetsByUser(userId);
+    res.json(bets);
+  });
+
+  // ═══════════════════════════════════════════
+  // WALLET ROUTES
+  // ═══════════════════════════════════════════
+
+  app.get("/api/wallet/transactions", async (req, res) => {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const txs = await storage.getTransactionsByUser(userId);
+    res.json(txs);
+  });
+
+  app.post("/api/wallet/daily-bonus", async (req, res) => {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const bonus = 50;
+    await storage.updateUserBalance(userId, bonus);
+    await storage.createTransaction({
+      userId,
+      type: "daily_bonus",
+      amount: bonus,
+      description: "Daily login bonus: 50 KC",
+      createdAt: new Date().toISOString(),
+    });
+    const user = await storage.getUser(userId);
+    const { password: _, ...safeUser } = user!;
+    res.json(safeUser);
+  });
+
+  // ═══════════════════════════════════════════
+  // LEADERBOARD
+  // ═══════════════════════════════════════════
+
+  app.get("/api/leaderboard", async (_req, res) => {
+    const leaderboard = await storage.getLeaderboard();
+    const safe = leaderboard.map(({ password: _, ...u }) => u);
+    res.json(safe);
+  });
+
+  // ═══════════════════════════════════════════
+  // ADMIN ROUTES (all require admin auth)
+  // ═══════════════════════════════════════════
+
+  // --- Admin Stats ---
+  app.get("/api/admin/stats", requireAdmin, async (_req, res) => {
+    const [allUsers, allMarkets, allBets, allTx] = await Promise.all([
+      storage.getAllUsers(),
+      storage.getMarkets(),
+      storage.getAllBets(),
+      storage.getAllTransactions(),
+    ]);
+
+    const activeMarkets = allMarkets.filter((m) => !m.resolved);
+    const resolvedMarkets = allMarkets.filter((m) => m.resolved);
+    const totalVolume = allMarkets.reduce((sum, m) => sum + m.volume, 0);
+    const totalKCInCirculation = allUsers.reduce((sum, u) => sum + u.balance, 0);
+
+    res.json({
+      totalUsers: allUsers.length,
+      totalMarkets: allMarkets.length,
+      activeMarkets: activeMarkets.length,
+      resolvedMarkets: resolvedMarkets.length,
+      totalBets: allBets.length,
+      totalVolume,
+      totalKCInCirculation,
+      totalTransactions: allTx.length,
+    });
+  });
+
+  // --- Admin: All Users ---
+  app.get("/api/admin/users", requireAdmin, async (_req, res) => {
+    const users = await storage.getAllUsers();
+    const safe = users.map(({ password: _, ...u }) => u);
+    res.json(safe);
+  });
+
+  // --- Admin: Grant/deduct KC from a user ---
+  app.post("/api/admin/users/:id/adjust-balance", requireAdmin, async (req, res) => {
+    const { amount, reason } = req.body;
+    if (typeof amount !== "number" || !reason) {
+      return res.status(400).json({ error: "amount (number) and reason (string) required" });
+    }
+    const user = await storage.getUser(req.params.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    await storage.updateUserBalance(user.id, amount);
+    await storage.createTransaction({
+      userId: user.id,
+      type: "admin_grant",
+      amount,
+      description: `Admin: ${reason}`,
+      createdAt: new Date().toISOString(),
+    });
+
+    const updated = await storage.getUser(user.id);
+    const { password: _, ...safeUser } = updated!;
+    res.json(safeUser);
+  });
+
+  // --- Admin: All Markets ---
+  app.get("/api/admin/markets", requireAdmin, async (_req, res) => {
+    const markets = await storage.getMarkets();
+    res.json(markets);
+  });
+
+  // --- Admin: Create Market ---
+  app.post("/api/admin/markets", requireAdmin, async (req, res) => {
+    try {
+      const { title, description, category, subcategory, closesAt, icon, featured, resolutionSource, resolutionData, yesPrice, noPrice } = req.body;
+      if (!title || !description || !category || !closesAt) {
+        return res.status(400).json({ error: "title, description, category, and closesAt are required" });
+      }
+      const adminUser = (req as any).adminUser;
+      const market = await storage.createMarket({
+        title,
+        description,
+        category,
+        subcategory: subcategory || null,
+        yesPrice: yesPrice || 0.5,
+        noPrice: noPrice || 0.5,
+        closesAt,
+        createdAt: new Date().toISOString(),
+        featured: featured || false,
+        icon: icon || "📊",
+        createdBy: adminUser.id,
+        resolutionSource: resolutionSource || "manual",
+        resolutionData: resolutionData ? JSON.stringify(resolutionData) : null,
+      });
+      res.json(market);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to create market" });
+    }
+  });
+
+  // --- Admin: Update Market ---
+  app.patch("/api/admin/markets/:id", requireAdmin, async (req, res) => {
+    const market = await storage.getMarket(req.params.id);
+    if (!market) return res.status(404).json({ error: "Market not found" });
+
+    const allowed = ["title", "description", "category", "subcategory", "closesAt", "icon", "featured", "resolutionSource", "resolutionData", "yesPrice", "noPrice"];
+    const updates: any = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        if (key === "resolutionData" && typeof req.body[key] === "object") {
+          updates[key] = JSON.stringify(req.body[key]);
+        } else {
+          updates[key] = req.body[key];
+        }
+      }
+    }
+
+    const updated = await storage.updateMarket(req.params.id, updates);
+    res.json(updated);
+  });
+
+  // --- Admin: Delete Market ---
+  app.delete("/api/admin/markets/:id", requireAdmin, async (req, res) => {
+    const market = await storage.getMarket(req.params.id);
+    if (!market) return res.status(404).json({ error: "Market not found" });
+    
+    // Refund all unsettled bets before deleting
+    const unsettled = await storage.getUnsettledBetsByMarket(req.params.id);
+    for (const bet of unsettled) {
+      await storage.updateUserBalance(bet.userId, bet.amount);
+      await storage.settleBet(bet.id, bet.amount); // refund = payout equals amount
+      await storage.createTransaction({
+        userId: bet.userId,
+        type: "admin_grant",
+        amount: bet.amount,
+        description: `Refund: market "${market.title}" was deleted by admin`,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    
+    await storage.deleteMarket(req.params.id);
+    res.json({ ok: true, refundedBets: unsettled.length });
+  });
+
+  // --- Admin: Resolve Market ---
+  app.post("/api/admin/markets/:id/resolve", requireAdmin, async (req, res) => {
+    const { outcome } = req.body;
+    if (typeof outcome !== "boolean") {
+      return res.status(400).json({ error: "outcome (boolean) is required" });
+    }
+    
+    const market = await storage.getMarket(req.params.id);
+    if (!market) return res.status(404).json({ error: "Market not found" });
+    if (market.resolved) return res.status(400).json({ error: "Market already resolved" });
+
+    const adminUser = (req as any).adminUser;
+    await storage.resolveMarket(req.params.id, outcome, adminUser.id);
+    
+    // Run payout engine
+    const settledCount = await settleMarketBets(req.params.id, outcome);
+    
+    const updated = await storage.getMarket(req.params.id);
+    res.json({ market: updated, settledBets: settledCount });
+  });
+
+  // --- Admin: Unresolve Market (revert) ---
+  app.post("/api/admin/markets/:id/unresolve", requireAdmin, async (req, res) => {
+    const market = await storage.getMarket(req.params.id);
+    if (!market) return res.status(404).json({ error: "Market not found" });
+    if (!market.resolved) return res.status(400).json({ error: "Market is not resolved" });
+
+    // Revert the market resolution
+    await storage.updateMarket(req.params.id, {
+      resolved: false,
+      outcome: null,
+      resolvedAt: null,
+      resolvedBy: null,
+    });
+
+    const updated = await storage.getMarket(req.params.id);
+    res.json(updated);
+  });
+
+  // --- Admin: All Bets ---
+  app.get("/api/admin/bets", requireAdmin, async (_req, res) => {
+    const bets = await storage.getAllBets();
+    res.json(bets);
+  });
+
+  // --- Admin: Recent Transactions ---
+  app.get("/api/admin/transactions", requireAdmin, async (_req, res) => {
+    const txs = await storage.getAllTransactions();
+    res.json(txs.slice(0, 100));
+  });
+
+  // --- Admin: Bulk Grant KC ---
+  app.post("/api/admin/bulk-grant", requireAdmin, async (req, res) => {
+    const { amount, reason } = req.body;
+    if (typeof amount !== "number" || !reason) {
+      return res.status(400).json({ error: "amount and reason required" });
+    }
+    const users = await storage.getAllUsers();
+    let count = 0;
+    for (const user of users) {
+      if (user.role !== "admin") {
+        await storage.updateUserBalance(user.id, amount);
+        await storage.createTransaction({
+          userId: user.id,
+          type: "admin_grant",
+          amount,
+          description: `Admin grant: ${reason}`,
+          createdAt: new Date().toISOString(),
+        });
+        count++;
+      }
+    }
+    res.json({ ok: true, usersAffected: count });
+  });
+
+  // ═══════════════════════════════════════════
+  // BLOCKCHAIN / WALLET ROUTES
+  // ═══════════════════════════════════════════
+
+  // Initialize blockchain connection on server start
+  initBlockchain();
+
+  // Get blockchain config (contract address, chain info)
+  app.get("/api/blockchain/config", async (_req, res) => {
+    res.json(getBlockchainConfig());
+  });
+
+  // Link a MetaMask wallet to the current user's account
+  app.post("/api/wallet/link", async (req, res) => {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const { walletAddress } = req.body;
+    if (!walletAddress || !/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      return res.status(400).json({ error: "Invalid Ethereum wallet address" });
+    }
+
+    // Check if wallet is already linked to another account
+    const existing = await storage.getUserByWallet(walletAddress);
+    if (existing && existing.id !== userId) {
+      return res.status(400).json({ error: "This wallet is already linked to another account" });
+    }
+
+    await storage.linkWallet(userId, walletAddress);
+    const user = await storage.getUser(userId);
+    const { password: _, ...safeUser } = user!;
+    res.json(safeUser);
+  });
+
+  // Unlink wallet from current user
+  app.post("/api/wallet/unlink", async (req, res) => {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    await storage.unlinkWallet(userId);
+    const user = await storage.getUser(userId);
+    const { password: _, ...safeUser } = user!;
+    res.json(safeUser);
+  });
+
+  // Get on-chain KC balance for the current user's linked wallet
+  app.get("/api/wallet/onchain-balance", async (req, res) => {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const user = await storage.getUser(userId);
+    if (!user?.walletAddress) {
+      return res.json({ balance: 0, walletLinked: false });
+    }
+
+    if (!isBlockchainEnabled()) {
+      return res.json({ balance: 0, walletLinked: true, blockchainEnabled: false });
+    }
+
+    const balance = await getOnChainBalance(user.walletAddress);
+    res.json({ balance, walletLinked: true, blockchainEnabled: true });
+  });
+
+  // Deposit: user sends KC on-chain, we verify and credit their off-chain balance
+  app.post("/api/wallet/deposit", async (req, res) => {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const { txHash, amount } = req.body;
+    if (!txHash || typeof amount !== "number" || amount <= 0) {
+      return res.status(400).json({ error: "txHash and positive amount required" });
+    }
+
+    if (!isBlockchainEnabled()) {
+      return res.status(400).json({ error: "Blockchain features not configured" });
+    }
+
+    // Verify the transaction on-chain
+    const verified = await verifyTransaction(txHash);
+    if (!verified) {
+      return res.status(400).json({ error: "Transaction not found or not confirmed" });
+    }
+
+    // Credit the user's off-chain balance
+    await storage.updateUserBalance(userId, amount);
+    await storage.createTransaction({
+      userId,
+      type: "deposit",
+      amount,
+      description: `Deposited ${amount} KC from wallet`,
+      txHash,
+      createdAt: new Date().toISOString(),
+    });
+
+    const user = await storage.getUser(userId);
+    const { password: _, ...safeUser } = user!;
+    res.json(safeUser);
+  });
+
+  // Withdrawal: deduct off-chain balance (on-chain transfer happens in browser via MetaMask)
+  app.post("/api/wallet/withdraw", async (req, res) => {
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    const { amount, txHash } = req.body;
+    if (typeof amount !== "number" || amount <= 0) {
+      return res.status(400).json({ error: "Positive amount required" });
+    }
+
+    const user = await storage.getUser(userId);
+    if (!user) return res.status(401).json({ error: "User not found" });
+    if (!user.walletAddress) return res.status(400).json({ error: "No wallet linked" });
+    if (user.balance < amount) {
+      return res.status(400).json({ error: "Insufficient off-chain balance" });
+    }
+
+    // Deduct off-chain balance
+    await storage.updateUserBalance(userId, -amount);
+    await storage.createTransaction({
+      userId,
+      type: "withdrawal",
+      amount: -amount,
+      description: `Withdrew ${amount} KC to wallet`,
+      txHash: txHash || null,
+      createdAt: new Date().toISOString(),
+    });
+
+    const updated = await storage.getUser(userId);
+    const { password: _, ...safeUser } = updated!;
+    res.json(safeUser);
+  });
+
+  return httpServer;
+}
