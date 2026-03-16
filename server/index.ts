@@ -59,7 +59,15 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+
 (async () => {
+  // Seed database if using PostgreSQL
+  if (process.env.DATABASE_URL) {
+    const { seedDatabase } = await import("./seed");
+    await seedDatabase();
+  }
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

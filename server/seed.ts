@@ -1,0 +1,316 @@
+import { db } from "./db";
+import { users, markets } from "@shared/schema";
+
+export async function seedDatabase() {
+  if (!db) return;
+
+  // Check if there are any users already
+  const existingUsers = await db.select().from(users).limit(1);
+  if (existingUsers.length > 0) {
+    console.log("[seed] Database already has data, skipping seed.");
+    return;
+  }
+
+  console.log("[seed] Empty database detected — seeding initial data...");
+
+  const now = new Date().toISOString();
+
+  // Create admin user (Neal)
+  const [admin] = await db
+    .insert(users)
+    .values({
+      username: "neal.goel",
+      password: "knightcoin2026",
+      displayName: "Neal Goel",
+      email: "neal.goel@menloschool.org",
+      walletAddress: null,
+      role: "admin",
+      balance: 10000,
+      totalWinnings: 0,
+      totalBets: 0,
+      correctPredictions: 0,
+      createdAt: now,
+    })
+    .returning();
+
+  // Create demo user
+  await db.insert(users).values({
+    username: "knight",
+    password: "menlo2026",
+    displayName: "Demo Knight",
+    email: null,
+    walletAddress: null,
+    role: "user",
+    balance: 1000,
+    totalWinnings: 0,
+    totalBets: 0,
+    correctPredictions: 0,
+    createdAt: now,
+  });
+
+  const adminId = admin.id;
+
+  // Seed sample markets
+  await db.insert(markets).values([
+    {
+      title: "Will Menlo beat Sacred Heart in basketball this Friday?",
+      description:
+        "Menlo Knights vs Sacred Heart Prep — varsity basketball matchup. Market resolves YES if Menlo wins.",
+      category: "sports",
+      subcategory: "Basketball",
+      yesPrice: 0.62,
+      noPrice: 0.38,
+      volume: 4520,
+      totalBets: 38,
+      resolved: false,
+      outcome: null,
+      closesAt: "2026-03-20T19:00:00Z",
+      createdAt: now,
+      featured: true,
+      icon: "🏀",
+      createdBy: adminId,
+      resolutionSource: "manual",
+      resolutionData: null,
+      resolvedAt: null,
+      resolvedBy: null,
+    },
+    {
+      title: "Will Menlo's baseball team make CCS playoffs?",
+      description:
+        "Will the Menlo Knights baseball team qualify for the Central Coast Section playoffs this spring season?",
+      category: "sports",
+      subcategory: "Baseball",
+      yesPrice: 0.71,
+      noPrice: 0.29,
+      volume: 2890,
+      totalBets: 24,
+      resolved: false,
+      outcome: null,
+      closesAt: "2026-05-15T23:59:00Z",
+      createdAt: now,
+      featured: false,
+      icon: "⚾",
+      createdBy: adminId,
+      resolutionSource: "manual",
+      resolutionData: null,
+      resolvedAt: null,
+      resolvedBy: null,
+    },
+    {
+      title: "Will the AP Physics 2 class average be above 4?",
+      description:
+        "Based on the May 2026 AP Physics 2 exam, will the Menlo School average score be 4.0 or higher?",
+      category: "academic",
+      subcategory: "AP Exams",
+      yesPrice: 0.35,
+      noPrice: 0.65,
+      volume: 1680,
+      totalBets: 21,
+      resolved: false,
+      outcome: null,
+      closesAt: "2026-07-01T00:00:00Z",
+      createdAt: now,
+      featured: true,
+      icon: "⚛️",
+      createdBy: adminId,
+      resolutionSource: "manual",
+      resolutionData: null,
+      resolvedAt: null,
+      resolvedBy: null,
+    },
+    {
+      title: "Who wins the spring talent show — vocal or instrumental?",
+      description:
+        "Will the winner of the 2026 Menlo spring talent show be a vocal act (YES) or instrumental act (NO)?",
+      category: "social",
+      subcategory: "Talent Show",
+      yesPrice: 0.55,
+      noPrice: 0.45,
+      volume: 1250,
+      totalBets: 19,
+      resolved: false,
+      outcome: null,
+      closesAt: "2026-04-10T23:59:00Z",
+      createdAt: now,
+      featured: false,
+      icon: "🎤",
+      createdBy: adminId,
+      resolutionSource: "manual",
+      resolutionData: null,
+      resolvedAt: null,
+      resolvedBy: null,
+    },
+    {
+      title: "Will the new schedule proposal pass for next year?",
+      description:
+        "The admin has proposed a block schedule change for 2026-27. Will the final version be approved by the board?",
+      category: "campus",
+      subcategory: "Policy",
+      yesPrice: 0.44,
+      noPrice: 0.56,
+      volume: 5100,
+      totalBets: 52,
+      resolved: false,
+      outcome: null,
+      closesAt: "2026-06-01T00:00:00Z",
+      createdAt: now,
+      featured: true,
+      icon: "📋",
+      createdBy: adminId,
+      resolutionSource: "manual",
+      resolutionData: null,
+      resolvedAt: null,
+      resolvedBy: null,
+    },
+    {
+      title: "Will the Fed cut rates at the June 2026 meeting?",
+      description:
+        "Will the Federal Reserve announce a federal funds rate cut at the June 2026 FOMC meeting?",
+      category: "politics",
+      subcategory: "Federal Reserve",
+      yesPrice: 0.67,
+      noPrice: 0.33,
+      volume: 18500,
+      totalBets: 142,
+      resolved: false,
+      outcome: null,
+      closesAt: "2026-06-17T18:00:00Z",
+      createdAt: now,
+      featured: true,
+      icon: "🏛️",
+      createdBy: adminId,
+      resolutionSource: "api_news",
+      resolutionData: JSON.stringify({ topic: "fed_rate_cut_june_2026" }),
+      resolvedAt: null,
+      resolvedBy: null,
+    },
+    {
+      title: "Will Tesla stock close above $300 by end of Q2 2026?",
+      description:
+        "Will TSLA stock price close at or above $300 on the last trading day of Q2 2026 (June 30)?",
+      category: "tech",
+      subcategory: "Stocks",
+      yesPrice: 0.52,
+      noPrice: 0.48,
+      volume: 12300,
+      totalBets: 98,
+      resolved: false,
+      outcome: null,
+      closesAt: "2026-06-30T20:00:00Z",
+      createdAt: now,
+      featured: false,
+      icon: "📈",
+      createdBy: adminId,
+      resolutionSource: "api_stock",
+      resolutionData: JSON.stringify({
+        ticker: "TSLA",
+        targetPrice: 300,
+        condition: "above",
+      }),
+      resolvedAt: null,
+      resolvedBy: null,
+    },
+    {
+      title: "Will the Warriors make the 2026 NBA playoffs?",
+      description:
+        "Will the Golden State Warriors qualify for the 2026 NBA Playoffs (play-in counts as YES)?",
+      category: "pro-sports",
+      subcategory: "NBA",
+      yesPrice: 0.73,
+      noPrice: 0.27,
+      volume: 8900,
+      totalBets: 76,
+      resolved: false,
+      outcome: null,
+      closesAt: "2026-04-13T23:59:00Z",
+      createdAt: now,
+      featured: true,
+      icon: "🏀",
+      createdBy: adminId,
+      resolutionSource: "api_sports",
+      resolutionData: JSON.stringify({
+        league: "NBA",
+        team: "Warriors",
+        event: "playoffs_2026",
+      }),
+      resolvedAt: null,
+      resolvedBy: null,
+    },
+    {
+      title: "Will Bitcoin hit $150k before end of 2026?",
+      description:
+        'Will the price of Bitcoin (BTC/USD) reach $150,000 on any major exchange at any point during 2026?',
+      category: "crypto",
+      subcategory: "Bitcoin",
+      yesPrice: 0.39,
+      noPrice: 0.61,
+      volume: 22100,
+      totalBets: 167,
+      resolved: false,
+      outcome: null,
+      closesAt: "2026-12-31T23:59:00Z",
+      createdAt: now,
+      featured: false,
+      icon: "₿",
+      createdBy: adminId,
+      resolutionSource: "api_crypto",
+      resolutionData: JSON.stringify({
+        symbol: "BTC",
+        targetPrice: 150000,
+        condition: "above",
+      }),
+      resolvedAt: null,
+      resolvedBy: null,
+    },
+    {
+      title: "Will OpenAI release GPT-5 before July 2026?",
+      description:
+        "Will OpenAI officially release (general availability, not limited preview) a model branded as GPT-5 before July 1, 2026?",
+      category: "tech",
+      subcategory: "AI",
+      yesPrice: 0.43,
+      noPrice: 0.57,
+      volume: 15200,
+      totalBets: 121,
+      resolved: false,
+      outcome: null,
+      closesAt: "2026-07-01T00:00:00Z",
+      createdAt: now,
+      featured: true,
+      icon: "🤖",
+      createdBy: adminId,
+      resolutionSource: "api_news",
+      resolutionData: JSON.stringify({ topic: "openai_gpt5_release" }),
+      resolvedAt: null,
+      resolvedBy: null,
+    },
+    {
+      title: "Will the 49ers win the NFC West in the 2026 season?",
+      description:
+        "Will the San Francisco 49ers finish first in the NFC West division for the 2026-27 NFL season?",
+      category: "pro-sports",
+      subcategory: "NFL",
+      yesPrice: 0.31,
+      noPrice: 0.69,
+      volume: 7200,
+      totalBets: 61,
+      resolved: false,
+      outcome: null,
+      closesAt: "2027-01-10T23:59:00Z",
+      createdAt: now,
+      featured: false,
+      icon: "🏈",
+      createdBy: adminId,
+      resolutionSource: "api_sports",
+      resolutionData: JSON.stringify({
+        league: "NFL",
+        team: "49ers",
+        event: "nfc_west_2026",
+      }),
+      resolvedAt: null,
+      resolvedBy: null,
+    },
+  ]);
+
+  console.log("[seed] Database seeded with admin user, demo user, and 11 sample markets.");
+}

@@ -581,4 +581,9 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+import { PgStorage } from "./pg-storage";
+
+const usePg = !!process.env.DATABASE_URL;
+console.log(`[storage] Using ${usePg ? "PostgreSQL (PgStorage)" : "in-memory (MemStorage)"} storage`);
+
+export const storage: IStorage = usePg ? new PgStorage() : new MemStorage();
