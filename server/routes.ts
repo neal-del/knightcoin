@@ -1,27 +1,50 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { randomBytes } from "crypto";
+import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import { initBlockchain, getBlockchainConfig, getOnChainBalance, verifyTransaction, isBlockchainEnabled } from "./blockchain";
 
-// Per-session user tracking (maps session token to user id)
+// Secure session management — maps random token → user id
 const sessions: Map<string, string> = new Map();
 
-function getSessionToken(req: any): string {
-  return req.headers["x-session-token"] || "default";
+function parseCookies(req: any): Record<string, string> {
+  const header = req.headers.cookie || "";
+  const cookies: Record<string, string> = {};
+  header.split(";").forEach((pair: string) => {
+    const [key, ...rest] = pair.trim().split("=");
+    if (key) cookies[key] = rest.join("=");
+  });
+  return cookies;
+}
+
+function getSessionToken(req: any): string | null {
+  const cookies = parseCookies(req);
+  return cookies["kc_session"] || null;
 }
 
 function getCurrentUserId(req: any): string | null {
   const token = getSessionToken(req);
+  if (!token) return null;
   return sessions.get(token) || null;
 }
 
-function setCurrentUserId(req: any, userId: string | null) {
+function createSession(res: any, userId: string) {
+  const token = randomBytes(32).toString("hex");
+  sessions.set(token, userId);
+  res.cookie("kc_session", token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    path: "/",
+  });
+}
+
+function destroySession(req: any, res: any) {
   const token = getSessionToken(req);
-  if (userId) {
-    sessions.set(token, userId);
-  } else {
-    sessions.delete(token);
-  }
+  if (token) sessions.delete(token);
+  res.clearCookie("kc_session", { path: "/" });
 }
 
 // Admin middleware
@@ -100,11 +123,15 @@ export async function registerRoutes(
       if (!username || !password || !displayName) {
         return res.status(400).json({ error: "All fields are required" });
       }
+      if (password.length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters" });
+      }
       const existing = await storage.getUserByUsername(username);
       if (existing) {
         return res.status(400).json({ error: "Username already taken" });
       }
-      const user = await storage.createUser({ username, password, displayName });
+      const hashedPassword = await bcrypt.hash(password, 10);
+      const user = await storage.createUser({ username, password: hashedPassword, displayName });
       
       // Create signup bonus transaction
       await storage.createTransaction({
@@ -115,7 +142,7 @@ export async function registerRoutes(
         createdAt: new Date().toISOString(),
       });
 
-      setCurrentUserId(req, user.id);
+      createSession(res, user.id);
       const { password: _, ...safeUser } = user;
       res.json(safeUser);
     } catch (err) {
@@ -127,10 +154,17 @@ export async function registerRoutes(
     try {
       const { username, password } = req.body;
       const user = await storage.getUserByUsername(username);
-      if (!user || user.password !== password) {
+      if (!user) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
-      setCurrentUserId(req, user.id);
+      // Support both bcrypt hashed and legacy plaintext passwords
+      const isValidPassword = user.password.startsWith("$2")
+        ? await bcrypt.compare(password, user.password)
+        : user.password === password;
+      if (!isValidPassword) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      createSession(res, user.id);
       const { password: _, ...safeUser } = user;
       res.json(safeUser);
     } catch (err) {
@@ -143,13 +177,20 @@ export async function registerRoutes(
     try {
       const { email, password } = req.body;
       const user = await storage.getUserByEmail(email);
-      if (!user || user.password !== password) {
+      if (!user) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
       if (user.role !== "admin") {
-        return res.status(403).json({ error: "Not an admin account" });
+        // Don't reveal that the account exists but isn't admin
+        return res.status(401).json({ error: "Invalid credentials" });
       }
-      setCurrentUserId(req, user.id);
+      const isValidPassword = user.password.startsWith("$2")
+        ? await bcrypt.compare(password, user.password)
+        : user.password === password;
+      if (!isValidPassword) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      createSession(res, user.id);
       const { password: _, ...safeUser } = user;
       res.json(safeUser);
     } catch (err) {
@@ -158,7 +199,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/auth/logout", async (req, res) => {
-    setCurrentUserId(req, null);
+    destroySession(req, res);
     res.json({ ok: true });
   });
 

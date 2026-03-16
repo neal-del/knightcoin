@@ -148,18 +148,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <LogOut className="w-4 h-4" />
               </button>
             ) : (
-              <div className="flex items-center gap-1">
-                <Link href="/admin/login">
-                  <div className="p-2 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer" data-testid="link-admin-login" title="Admin Login">
-                    <Shield className="w-4 h-4" />
-                  </div>
-                </Link>
-                <Link href="/login">
-                  <div className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer" data-testid="link-login">
-                    <LogIn className="w-4 h-4" />
-                  </div>
-                </Link>
-              </div>
+              <Link href="/login">
+                <div className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer" data-testid="link-login">
+                  <LogIn className="w-4 h-4" />
+                </div>
+              </Link>
             )}
           </div>
           <PerplexityAttribution />

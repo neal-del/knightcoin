@@ -1,10 +1,10 @@
-import { Switch, Route, Router } from "wouter";
+import { Switch, Route, Router, Redirect } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthProvider } from "@/lib/auth";
+import { AuthProvider, useAuth } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
 import { WalletProvider } from "@/lib/wallet";
 import Layout from "@/components/Layout";
@@ -26,6 +26,13 @@ import AdminRequests from "@/pages/AdminRequests";
 import RequestMarket from "@/pages/RequestMarket";
 import NotFound from "@/pages/not-found";
 
+// Route guard: redirects non-admins to home
+function AdminGuard({ component: Component }: { component: React.ComponentType<any> }) {
+  const { isAdmin } = useAuth();
+  if (!isAdmin) return <Redirect to="/" />;
+  return <Component />;
+}
+
 function AppRouter() {
   return (
     <Layout>
@@ -38,13 +45,13 @@ function AppRouter() {
         <Route path="/leaderboard" component={Leaderboard} />
         <Route path="/login" component={Login} />
         <Route path="/admin/login" component={AdminLogin} />
-        <Route path="/admin" component={AdminDashboard} />
-        <Route path="/admin/markets" component={AdminMarkets} />
-        <Route path="/admin/markets/new" component={AdminCreateMarket} />
-        <Route path="/admin/markets/:id/edit" component={AdminEditMarket} />
-        <Route path="/admin/resolve" component={AdminResolve} />
-        <Route path="/admin/users" component={AdminUsers} />
-        <Route path="/admin/requests" component={AdminRequests} />
+        <Route path="/admin">{() => <AdminGuard component={AdminDashboard} />}</Route>
+        <Route path="/admin/markets">{() => <AdminGuard component={AdminMarkets} />}</Route>
+        <Route path="/admin/markets/new">{() => <AdminGuard component={AdminCreateMarket} />}</Route>
+        <Route path="/admin/markets/:id/edit">{(params) => <AdminGuard component={() => <AdminEditMarket {...params} />} />}</Route>
+        <Route path="/admin/resolve">{() => <AdminGuard component={AdminResolve} />}</Route>
+        <Route path="/admin/users">{() => <AdminGuard component={AdminUsers} />}</Route>
+        <Route path="/admin/requests">{() => <AdminGuard component={AdminRequests} />}</Route>
         <Route path="/request-market" component={RequestMarket} />
         <Route component={NotFound} />
       </Switch>
