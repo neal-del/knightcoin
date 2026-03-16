@@ -35,6 +35,7 @@ export const markets = pgTable("markets", {
   description: text("description").notNull(),
   category: text("category").notNull(), // 'sports', 'academic', 'social', 'campus', 'politics', 'pro-sports', 'tech', 'crypto'
   subcategory: text("subcategory"),
+  marketType: text("market_type").notNull().default("binary"), // 'binary', 'multi_outcome', 'time_bracket'
   yesPrice: real("yes_price").notNull().default(0.5),
   noPrice: real("no_price").notNull().default(0.5),
   volume: real("volume").notNull().default(0),
@@ -104,3 +105,48 @@ export const insertTransactionSchema = createInsertSchema(transactions).omit({
 
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 export type Transaction = typeof transactions.$inferSelect;
+
+// Market Requests table (user-submitted market ideas)
+export const marketRequests = pgTable("market_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  category: text("category").notNull(),
+  status: text("status").notNull().default("pending"), // 'pending', 'approved', 'rejected'
+  adminNote: text("admin_note"),
+  createdAt: text("created_at").notNull(),
+  reviewedAt: text("reviewed_at"),
+  reviewedBy: text("reviewed_by"),
+});
+
+export const insertMarketRequestSchema = createInsertSchema(marketRequests).omit({
+  id: true,
+  status: true,
+  adminNote: true,
+  reviewedAt: true,
+  reviewedBy: true,
+});
+
+export type InsertMarketRequest = z.infer<typeof insertMarketRequestSchema>;
+export type MarketRequest = typeof marketRequests.$inferSelect;
+
+// Market Options table (for multi-outcome and time-bracket markets)
+export const marketOptions = pgTable("market_options", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  marketId: varchar("market_id").notNull(),
+  label: text("label").notNull(),
+  price: real("price").notNull().default(0.5),
+  resolved: boolean("resolved").notNull().default(false),
+  isWinner: boolean("is_winner").notNull().default(false),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const insertMarketOptionSchema = createInsertSchema(marketOptions).omit({
+  id: true,
+  resolved: true,
+  isWinner: true,
+});
+
+export type InsertMarketOption = z.infer<typeof insertMarketOptionSchema>;
+export type MarketOption = typeof marketOptions.$inferSelect;

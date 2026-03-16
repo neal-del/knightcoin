@@ -5,6 +5,8 @@ import {
   markets,
   bets,
   transactions,
+  marketRequests,
+  marketOptions,
   type User,
   type InsertUser,
   type Market,
@@ -13,6 +15,10 @@ import {
   type InsertBet,
   type Transaction,
   type InsertTransaction,
+  type MarketRequest,
+  type InsertMarketRequest,
+  type MarketOption,
+  type InsertMarketOption,
 } from "@shared/schema";
 import type { IStorage } from "./storage";
 
@@ -301,5 +307,94 @@ export class PgStorage implements IStorage {
       .select()
       .from(transactions)
       .orderBy(desc(transactions.createdAt));
+  }
+
+  // Market Requests
+  async createMarketRequest(req: InsertMarketRequest): Promise<MarketRequest> {
+    const [mr] = await getDb()
+      .insert(marketRequests)
+      .values({
+        ...req,
+        status: "pending",
+        adminNote: null,
+        reviewedAt: null,
+        reviewedBy: null,
+      })
+      .returning();
+    return mr;
+  }
+
+  async getMarketRequestsByUser(userId: string): Promise<MarketRequest[]> {
+    return getDb()
+      .select()
+      .from(marketRequests)
+      .where(eq(marketRequests.userId, userId))
+      .orderBy(desc(marketRequests.createdAt));
+  }
+
+  async getAllMarketRequests(): Promise<MarketRequest[]> {
+    return getDb()
+      .select()
+      .from(marketRequests)
+      .orderBy(desc(marketRequests.createdAt));
+  }
+
+  async updateMarketRequest(
+    id: string,
+    updates: Partial<MarketRequest>,
+  ): Promise<MarketRequest | undefined> {
+    const [mr] = await getDb()
+      .update(marketRequests)
+      .set(updates)
+      .where(eq(marketRequests.id, id))
+      .returning();
+    return mr;
+  }
+
+  // Market Options
+  async getMarketOptions(marketId: string): Promise<MarketOption[]> {
+    return getDb()
+      .select()
+      .from(marketOptions)
+      .where(eq(marketOptions.marketId, marketId))
+      .orderBy(marketOptions.sortOrder);
+  }
+
+  async getMarketOption(id: string): Promise<MarketOption | undefined> {
+    const [opt] = await getDb()
+      .select()
+      .from(marketOptions)
+      .where(eq(marketOptions.id, id));
+    return opt;
+  }
+
+  async createMarketOption(opt: InsertMarketOption): Promise<MarketOption> {
+    const [option] = await getDb()
+      .insert(marketOptions)
+      .values({
+        ...opt,
+        resolved: false,
+        isWinner: false,
+      })
+      .returning();
+    return option;
+  }
+
+  async updateMarketOption(
+    id: string,
+    updates: Partial<MarketOption>,
+  ): Promise<MarketOption | undefined> {
+    const [opt] = await getDb()
+      .update(marketOptions)
+      .set(updates)
+      .where(eq(marketOptions.id, id))
+      .returning();
+    return opt;
+  }
+
+  async deleteMarketOptions(marketId: string): Promise<void> {
+    await getDb()
+      .delete(marketOptions)
+      .where(eq(marketOptions.marketId, marketId));
   }
 }

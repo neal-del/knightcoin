@@ -1,7 +1,8 @@
 import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp, Clock, Users } from "lucide-react";
-import type { Market } from "@shared/schema";
+import type { Market, MarketOption } from "@shared/schema";
 
 const CATEGORY_COLORS: Record<string, string> = {
   sports: "bg-orange-500/10 text-orange-400 border-orange-500/20",
@@ -39,10 +40,25 @@ function formatTimeLeft(closesAt: string): string {
   return `${hours}h left`;
 }
 
+const OPTION_COLORS = [
+  "text-cyan-400 bg-cyan-500/20",
+  "text-violet-400 bg-violet-500/20",
+  "text-amber-400 bg-amber-500/20",
+  "text-emerald-400 bg-emerald-500/20",
+  "text-pink-400 bg-pink-500/20",
+  "text-blue-400 bg-blue-500/20",
+];
+
 export default function MarketCard({ market }: { market: Market }) {
   const yesPercent = Math.round(market.yesPrice * 100);
   const noPercent = Math.round(market.noPrice * 100);
   const isSchool = ["sports", "academic", "social", "campus", "admin"].includes(market.category);
+  const isMulti = market.marketType === "multi_outcome" || market.marketType === "time_bracket";
+
+  const { data: options } = useQuery<MarketOption[]>({
+    queryKey: ["/api/markets", market.id, "options"],
+    enabled: isMulti,
+  });
 
   return (
     <Link href={`/market/${market.id}`}>
@@ -64,38 +80,69 @@ export default function MarketCard({ market }: { market: Market }) {
                 {market.subcategory && (
                   <span className="text-[10px] text-muted-foreground">{market.subcategory}</span>
                 )}
+                {isMulti && (
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border bg-violet-500/10 text-violet-400 border-violet-500/20">
+                    {market.marketType === "time_bracket" ? "Time" : "Multi"}
+                  </Badge>
+                )}
               </div>
             </div>
           </div>
         </div>
 
         {/* Price bars */}
-        <div className="space-y-2 mb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium w-8 text-emerald-400">Yes</span>
-            <div className="flex-1 h-6 bg-muted/50 rounded-md overflow-hidden relative">
-              <div
-                className="absolute inset-y-0 left-0 bg-emerald-500/20 rounded-md transition-all"
-                style={{ width: `${yesPercent}%` }}
-              />
-              <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-emerald-400 tabular-nums">
-                {yesPercent}¢
-              </span>
+        {isMulti && options && options.length > 0 ? (
+          <div className="space-y-1.5 mb-3">
+            {options.slice(0, 3).map((opt, i) => {
+              const pct = Math.round(opt.price * 100);
+              const color = OPTION_COLORS[i % OPTION_COLORS.length];
+              return (
+                <div key={opt.id} className="flex items-center gap-2" data-testid={`card-option-${opt.id}`}>
+                  <span className={`text-xs font-medium w-20 truncate ${color.split(" ")[0]}`}>{opt.label}</span>
+                  <div className="flex-1 h-5 bg-muted/50 rounded-md overflow-hidden relative">
+                    <div
+                      className={`absolute inset-y-0 left-0 rounded-md transition-all ${color.split(" ")[1]}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                    <span className={`absolute inset-0 flex items-center justify-center text-[11px] font-bold tabular-nums ${color.split(" ")[0]}`}>
+                      {pct}¢
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+            {options.length > 3 && (
+              <span className="text-[10px] text-muted-foreground">+{options.length - 3} more</span>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2 mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium w-8 text-emerald-400">Yes</span>
+              <div className="flex-1 h-6 bg-muted/50 rounded-md overflow-hidden relative">
+                <div
+                  className="absolute inset-y-0 left-0 bg-emerald-500/20 rounded-md transition-all"
+                  style={{ width: `${yesPercent}%` }}
+                />
+                <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-emerald-400 tabular-nums">
+                  {yesPercent}¢
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium w-8 text-rose-400">No</span>
+              <div className="flex-1 h-6 bg-muted/50 rounded-md overflow-hidden relative">
+                <div
+                  className="absolute inset-y-0 left-0 bg-rose-500/20 rounded-md transition-all"
+                  style={{ width: `${noPercent}%` }}
+                />
+                <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-rose-400 tabular-nums">
+                  {noPercent}¢
+                </span>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium w-8 text-rose-400">No</span>
-            <div className="flex-1 h-6 bg-muted/50 rounded-md overflow-hidden relative">
-              <div
-                className="absolute inset-y-0 left-0 bg-rose-500/20 rounded-md transition-all"
-                style={{ width: `${noPercent}%` }}
-              />
-              <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-rose-400 tabular-nums">
-                {noPercent}¢
-              </span>
-            </div>
-          </div>
-        </div>
+        )}
 
         {/* Footer stats */}
         <div className="flex items-center justify-between text-[11px] text-muted-foreground">

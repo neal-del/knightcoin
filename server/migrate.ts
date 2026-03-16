@@ -80,6 +80,34 @@ export async function runMigrations() {
         description TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS market_requests (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id VARCHAR NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        category TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        admin_note TEXT,
+        created_at TEXT NOT NULL,
+        reviewed_at TEXT,
+        reviewed_by TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS market_options (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        market_id VARCHAR NOT NULL,
+        label TEXT NOT NULL,
+        price REAL NOT NULL DEFAULT 0.5,
+        resolved BOOLEAN NOT NULL DEFAULT false,
+        is_winner BOOLEAN NOT NULL DEFAULT false,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+
+    // Add market_type column to markets if it doesn't exist
+    await pool.query(`
+      ALTER TABLE markets ADD COLUMN IF NOT EXISTS market_type TEXT NOT NULL DEFAULT 'binary';
     `);
 
     console.log("[migrate] Tables verified/created successfully.");

@@ -156,12 +156,20 @@ export default function AdminMarkets() {
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 {!market.resolved && (
-                  <Link href={`/admin/resolve?id=${market.id}`}>
-                    <Button variant="outline" size="sm" className="gap-1 text-xs h-8" data-testid={`button-resolve-${market.id}`}>
-                      <CheckCircle2 className="w-3 h-3" />
-                      Resolve
-                    </Button>
-                  </Link>
+                  <>
+                    <Link href={`/admin/markets/${market.id}/edit`}>
+                      <Button variant="outline" size="sm" className="gap-1 text-xs h-8" data-testid={`button-edit-${market.id}`}>
+                        <Edit3 className="w-3 h-3" />
+                        Edit
+                      </Button>
+                    </Link>
+                    <Link href={`/admin/resolve?id=${market.id}`}>
+                      <Button variant="outline" size="sm" className="gap-1 text-xs h-8" data-testid={`button-resolve-${market.id}`}>
+                        <CheckCircle2 className="w-3 h-3" />
+                        Resolve
+                      </Button>
+                    </Link>
+                  </>
                 )}
                 <button
                   onClick={() => toggleFeatured(market)}

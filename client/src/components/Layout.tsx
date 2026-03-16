@@ -18,6 +18,8 @@ import {
   Users,
   PlusCircle,
   Coins,
+  MessageSquarePlus,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PerplexityAttribution } from "@/components/PerplexityAttribution";
@@ -29,6 +31,7 @@ const NAV_ITEMS = [
   { href: "/portfolio", label: "Portfolio", icon: Wallet },
   { href: "/wallet", label: "Wallet", icon: Coins },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
+  { href: "/request-market", label: "Request", icon: MessageSquarePlus },
 ];
 
 const ADMIN_NAV = [
@@ -37,6 +40,7 @@ const ADMIN_NAV = [
   { href: "/admin/markets/new", label: "Create", icon: PlusCircle },
   { href: "/admin/resolve", label: "Resolve", icon: CheckCircle2 },
   { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/requests", label: "Requests", icon: MessageSquare },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {

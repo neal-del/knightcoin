@@ -3,6 +3,8 @@ import {
   type Market, type InsertMarket,
   type Bet, type InsertBet,
   type Transaction, type InsertTransaction,
+  type MarketRequest, type InsertMarketRequest,
+  type MarketOption, type InsertMarketOption,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -46,6 +48,19 @@ export interface IStorage {
   getTransactionsByUser(userId: string): Promise<Transaction[]>;
   createTransaction(tx: InsertTransaction): Promise<Transaction>;
   getAllTransactions(): Promise<Transaction[]>;
+
+  // Market Requests
+  createMarketRequest(req: InsertMarketRequest): Promise<MarketRequest>;
+  getMarketRequestsByUser(userId: string): Promise<MarketRequest[]>;
+  getAllMarketRequests(): Promise<MarketRequest[]>;
+  updateMarketRequest(id: string, updates: Partial<MarketRequest>): Promise<MarketRequest | undefined>;
+
+  // Market Options
+  getMarketOptions(marketId: string): Promise<MarketOption[]>;
+  getMarketOption(id: string): Promise<MarketOption | undefined>;
+  createMarketOption(opt: InsertMarketOption): Promise<MarketOption>;
+  updateMarketOption(id: string, updates: Partial<MarketOption>): Promise<MarketOption | undefined>;
+  deleteMarketOptions(marketId: string): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -53,12 +68,16 @@ export class MemStorage implements IStorage {
   private markets: Map<string, Market>;
   private bets: Map<string, Bet>;
   private transactions: Map<string, Transaction>;
+  private marketRequests: Map<string, MarketRequest>;
+  private marketOptions: Map<string, MarketOption>;
 
   constructor() {
     this.users = new Map();
     this.markets = new Map();
     this.bets = new Map();
     this.transactions = new Map();
+    this.marketRequests = new Map();
+    this.marketOptions = new Map();
     this.seedData();
   }
 
@@ -106,6 +125,7 @@ export class MemStorage implements IStorage {
         description: "Menlo Knights vs Sacred Heart Prep — varsity basketball matchup. Market resolves YES if Menlo wins.",
         category: "sports",
         subcategory: "Basketball",
+        marketType: "binary",
         yesPrice: 0.62,
         noPrice: 0.38,
         volume: 4520,
@@ -127,6 +147,7 @@ export class MemStorage implements IStorage {
         description: "Will the Menlo Knights baseball team qualify for the Central Coast Section playoffs this spring season?",
         category: "sports",
         subcategory: "Baseball",
+        marketType: "binary",
         yesPrice: 0.71,
         noPrice: 0.29,
         volume: 2890,
@@ -148,6 +169,7 @@ export class MemStorage implements IStorage {
         description: "Based on the May 2026 AP Physics 2 exam, will the Menlo School average score be 4.0 or higher?",
         category: "academic",
         subcategory: "AP Exams",
+        marketType: "binary",
         yesPrice: 0.35,
         noPrice: 0.65,
         volume: 1680,
@@ -169,6 +191,7 @@ export class MemStorage implements IStorage {
         description: "Will the winner of the 2026 Menlo spring talent show be a vocal act (YES) or instrumental act (NO)?",
         category: "social",
         subcategory: "Talent Show",
+        marketType: "binary",
         yesPrice: 0.55,
         noPrice: 0.45,
         volume: 1250,
@@ -190,6 +213,7 @@ export class MemStorage implements IStorage {
         description: "The admin has proposed a block schedule change for 2026-27. Will the final version be approved by the board?",
         category: "campus",
         subcategory: "Policy",
+        marketType: "binary",
         yesPrice: 0.44,
         noPrice: 0.56,
         volume: 5100,
@@ -212,6 +236,7 @@ export class MemStorage implements IStorage {
         description: "Will the Federal Reserve announce a federal funds rate cut at the June 2026 FOMC meeting?",
         category: "politics",
         subcategory: "Federal Reserve",
+        marketType: "binary",
         yesPrice: 0.67,
         noPrice: 0.33,
         volume: 18500,
@@ -233,6 +258,7 @@ export class MemStorage implements IStorage {
         description: "Will TSLA stock price close at or above $300 on the last trading day of Q2 2026 (June 30)?",
         category: "tech",
         subcategory: "Stocks",
+        marketType: "binary",
         yesPrice: 0.52,
         noPrice: 0.48,
         volume: 12300,
@@ -254,6 +280,7 @@ export class MemStorage implements IStorage {
         description: "Will the Golden State Warriors qualify for the 2026 NBA Playoffs (play-in counts as YES)?",
         category: "pro-sports",
         subcategory: "NBA",
+        marketType: "binary",
         yesPrice: 0.73,
         noPrice: 0.27,
         volume: 8900,
@@ -275,6 +302,7 @@ export class MemStorage implements IStorage {
         description: "Will the price of Bitcoin (BTC/USD) reach $150,000 on any major exchange at any point during 2026?",
         category: "crypto",
         subcategory: "Bitcoin",
+        marketType: "binary",
         yesPrice: 0.39,
         noPrice: 0.61,
         volume: 22100,
@@ -296,6 +324,7 @@ export class MemStorage implements IStorage {
         description: "Will OpenAI officially release (general availability, not limited preview) a model branded as GPT-5 before July 1, 2026?",
         category: "tech",
         subcategory: "AI",
+        marketType: "binary",
         yesPrice: 0.43,
         noPrice: 0.57,
         volume: 15200,
@@ -317,6 +346,7 @@ export class MemStorage implements IStorage {
         description: "Will the San Francisco 49ers finish first in the NFC West division for the 2026-27 NFL season?",
         category: "pro-sports",
         subcategory: "NFL",
+        marketType: "binary",
         yesPrice: 0.31,
         noPrice: 0.69,
         volume: 7200,
@@ -578,6 +608,83 @@ export class MemStorage implements IStorage {
   async getAllTransactions(): Promise<Transaction[]> {
     return Array.from(this.transactions.values())
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  // Market Requests
+  async createMarketRequest(req: InsertMarketRequest): Promise<MarketRequest> {
+    const id = randomUUID();
+    const mr: MarketRequest = {
+      id,
+      ...req,
+      status: "pending",
+      adminNote: null,
+      reviewedAt: null,
+      reviewedBy: null,
+    };
+    this.marketRequests.set(id, mr);
+    return mr;
+  }
+
+  async getMarketRequestsByUser(userId: string): Promise<MarketRequest[]> {
+    return Array.from(this.marketRequests.values())
+      .filter((r) => r.userId === userId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  async getAllMarketRequests(): Promise<MarketRequest[]> {
+    return Array.from(this.marketRequests.values())
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  async updateMarketRequest(id: string, updates: Partial<MarketRequest>): Promise<MarketRequest | undefined> {
+    const req = this.marketRequests.get(id);
+    if (req) {
+      Object.assign(req, updates);
+      this.marketRequests.set(id, req);
+      return req;
+    }
+    return undefined;
+  }
+
+  // Market Options
+  async getMarketOptions(marketId: string): Promise<MarketOption[]> {
+    return Array.from(this.marketOptions.values())
+      .filter((o) => o.marketId === marketId)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  async getMarketOption(id: string): Promise<MarketOption | undefined> {
+    return this.marketOptions.get(id);
+  }
+
+  async createMarketOption(opt: InsertMarketOption): Promise<MarketOption> {
+    const id = randomUUID();
+    const option: MarketOption = {
+      id,
+      ...opt,
+      resolved: false,
+      isWinner: false,
+    };
+    this.marketOptions.set(id, option);
+    return option;
+  }
+
+  async updateMarketOption(id: string, updates: Partial<MarketOption>): Promise<MarketOption | undefined> {
+    const opt = this.marketOptions.get(id);
+    if (opt) {
+      Object.assign(opt, updates);
+      this.marketOptions.set(id, opt);
+      return opt;
+    }
+    return undefined;
+  }
+
+  async deleteMarketOptions(marketId: string): Promise<void> {
+    for (const [id, opt] of this.marketOptions) {
+      if (opt.marketId === marketId) {
+        this.marketOptions.delete(id);
+      }
+    }
   }
 }
 

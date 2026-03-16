@@ -21,6 +21,9 @@ import AdminMarkets from "@/pages/AdminMarkets";
 import AdminCreateMarket from "@/pages/AdminCreateMarket";
 import AdminResolve from "@/pages/AdminResolve";
 import AdminUsers from "@/pages/AdminUsers";
+import AdminEditMarket from "@/pages/AdminEditMarket";
+import AdminRequests from "@/pages/AdminRequests";
+import RequestMarket from "@/pages/RequestMarket";
 import NotFound from "@/pages/not-found";
 
 function AppRouter() {
@@ -38,8 +41,11 @@ function AppRouter() {
         <Route path="/admin" component={AdminDashboard} />
         <Route path="/admin/markets" component={AdminMarkets} />
         <Route path="/admin/markets/new" component={AdminCreateMarket} />
+        <Route path="/admin/markets/:id/edit" component={AdminEditMarket} />
         <Route path="/admin/resolve" component={AdminResolve} />
         <Route path="/admin/users" component={AdminUsers} />
+        <Route path="/admin/requests" component={AdminRequests} />
+        <Route path="/request-market" component={RequestMarket} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

@@ -10,19 +10,38 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { CATEGORY_LABELS, CATEGORY_COLORS, formatTimeLeft } from "@/components/MarketCard";
 import { ArrowLeft, TrendingUp, Clock, Users, Info } from "lucide-react";
-import type { Market } from "@shared/schema";
+import type { Market, MarketOption } from "@shared/schema";
+
+const OPTION_COLORS = [
+  "border-cyan-500/30 bg-cyan-500/10 text-cyan-400",
+  "border-violet-500/30 bg-violet-500/10 text-violet-400",
+  "border-amber-500/30 bg-amber-500/10 text-amber-400",
+  "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
+  "border-pink-500/30 bg-pink-500/10 text-pink-400",
+  "border-blue-500/30 bg-blue-500/10 text-blue-400",
+  "border-orange-500/30 bg-orange-500/10 text-orange-400",
+  "border-teal-500/30 bg-teal-500/10 text-teal-400",
+];
 
 export default function MarketDetail() {
   const [, params] = useRoute("/market/:id");
   const { user, refreshUser } = useAuth();
   const { toast } = useToast();
   const [position, setPosition] = useState<"yes" | "no">("yes");
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [placing, setPlacing] = useState(false);
 
   const { data: market, isLoading } = useQuery<Market>({
     queryKey: ["/api/markets", params?.id],
     enabled: !!params?.id,
+  });
+
+  const isMulti = market?.marketType === "multi_outcome" || market?.marketType === "time_bracket";
+
+  const { data: options } = useQuery<MarketOption[]>({
+    queryKey: ["/api/markets", params?.id, "options"],
+    enabled: !!params?.id && isMulti,
   });
 
   const handlePlaceBet = async () => {
@@ -42,20 +61,43 @@ export default function MarketDetail() {
 
     setPlacing(true);
     try {
-      await apiRequest("POST", "/api/bets", {
-        marketId: params?.id,
-        position,
-        amount: amt,
-      });
+      if (isMulti) {
+        if (!selectedOption) {
+          toast({ title: "Select an option", variant: "destructive" });
+          setPlacing(false);
+          return;
+        }
+        await apiRequest("POST", "/api/bets/multi", {
+          marketId: params?.id,
+          optionId: selectedOption,
+          amount: amt,
+        });
+      } else {
+        await apiRequest("POST", "/api/bets", {
+          marketId: params?.id,
+          position,
+          amount: amt,
+        });
+      }
       await refreshUser();
       queryClient.invalidateQueries({ queryKey: ["/api/markets", params?.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/markets", params?.id, "options"] });
       queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bets/user"] });
       setAmount("");
-      toast({
-        title: "Bet placed",
-        description: `${amt} KC on ${position.toUpperCase()} at ${Math.round((position === "yes" ? market!.yesPrice : market!.noPrice) * 100)}¢`,
-      });
+
+      if (isMulti) {
+        const opt = options?.find((o) => o.id === selectedOption);
+        toast({
+          title: "Bet placed",
+          description: `${amt} KC on "${opt?.label}" at ${Math.round((opt?.price || 0.5) * 100)}¢`,
+        });
+      } else {
+        toast({
+          title: "Bet placed",
+          description: `${amt} KC on ${position.toUpperCase()} at ${Math.round((position === "yes" ? market!.yesPrice : market!.noPrice) * 100)}¢`,
+        });
+      }
     } catch (err: any) {
       toast({ title: "Failed to place bet", description: err.message, variant: "destructive" });
     } finally {
@@ -85,7 +127,9 @@ export default function MarketDetail() {
 
   const yesPercent = Math.round(market.yesPrice * 100);
   const noPercent = Math.round(market.noPrice * 100);
-  const potentialPayout = amount ? (parseFloat(amount) / (position === "yes" ? market.yesPrice : market.noPrice)).toFixed(1) : "0";
+  const selectedOpt = options?.find((o) => o.id === selectedOption);
+  const selectedPrice = isMulti ? (selectedOpt?.price || 0.5) : (position === "yes" ? market.yesPrice : market.noPrice);
+  const potentialPayout = amount ? (parseFloat(amount) / selectedPrice).toFixed(1) : "0";
   const isSchool = ["sports", "academic", "social", "campus", "admin"].includes(market.category);
 
   return (
@@ -113,6 +157,11 @@ export default function MarketDetail() {
               {market.featured && (
                 <Badge className="text-[10px] px-1.5 py-0 bg-primary/10 text-primary border-primary/20">Featured</Badge>
               )}
+              {isMulti && (
+                <Badge className="text-[10px] px-1.5 py-0 bg-violet-500/10 text-violet-400 border-violet-500/20">
+                  {market.marketType === "time_bracket" ? "Time Bracket" : "Multi-Outcome"}
+                </Badge>
+              )}
             </div>
             <div className="flex items-start gap-3">
               <span className="text-3xl">{market.icon}</span>
@@ -122,19 +171,39 @@ export default function MarketDetail() {
             </div>
           </div>
 
-          {/* Price display — large */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-center">
-              <div className="text-xs text-emerald-400 uppercase tracking-wider mb-1">Yes</div>
-              <div className="text-3xl font-bold text-emerald-400 tabular-nums" data-testid="text-yes-price">{yesPercent}¢</div>
-              <div className="text-[10px] text-muted-foreground mt-1">{yesPercent}% chance</div>
+          {/* Price display */}
+          {isMulti && options ? (
+            <div className="space-y-2">
+              {options.map((opt, i) => {
+                const pct = Math.round(opt.price * 100);
+                const color = OPTION_COLORS[i % OPTION_COLORS.length];
+                return (
+                  <div key={opt.id} className={`rounded-xl border p-3 ${color}`} data-testid={`option-price-${opt.id}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">{opt.label}</span>
+                      <span className="text-lg font-bold tabular-nums">{pct}¢</span>
+                    </div>
+                    <div className="mt-1.5 h-2 bg-muted/30 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full bg-current opacity-40" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 text-center">
-              <div className="text-xs text-rose-400 uppercase tracking-wider mb-1">No</div>
-              <div className="text-3xl font-bold text-rose-400 tabular-nums" data-testid="text-no-price">{noPercent}¢</div>
-              <div className="text-[10px] text-muted-foreground mt-1">{noPercent}% chance</div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-center">
+                <div className="text-xs text-emerald-400 uppercase tracking-wider mb-1">Yes</div>
+                <div className="text-3xl font-bold text-emerald-400 tabular-nums" data-testid="text-yes-price">{yesPercent}¢</div>
+                <div className="text-[10px] text-muted-foreground mt-1">{yesPercent}% chance</div>
+              </div>
+              <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 text-center">
+                <div className="text-xs text-rose-400 uppercase tracking-wider mb-1">No</div>
+                <div className="text-3xl font-bold text-rose-400 tabular-nums" data-testid="text-no-price">{noPercent}¢</div>
+                <div className="text-[10px] text-muted-foreground mt-1">{noPercent}% chance</div>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Stats */}
           <div className="flex items-center gap-6 text-sm text-muted-foreground">
@@ -169,31 +238,56 @@ export default function MarketDetail() {
           <div className="rounded-xl border border-border bg-card p-5 space-y-5">
             <h3 className="text-sm font-semibold text-foreground">Place a Trade</h3>
 
-            {/* Position toggle */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setPosition("yes")}
-                className={`py-3 rounded-lg text-sm font-semibold transition-all ${
-                  position === "yes"
-                    ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 glow-green"
-                    : "bg-muted/30 text-muted-foreground border border-transparent hover:bg-muted/50"
-                }`}
-                data-testid="button-position-yes"
-              >
-                Buy Yes — {yesPercent}¢
-              </button>
-              <button
-                onClick={() => setPosition("no")}
-                className={`py-3 rounded-lg text-sm font-semibold transition-all ${
-                  position === "no"
-                    ? "bg-rose-500/15 text-rose-400 border border-rose-500/30 glow-red"
-                    : "bg-muted/30 text-muted-foreground border border-transparent hover:bg-muted/50"
-                }`}
-                data-testid="button-position-no"
-              >
-                Buy No — {noPercent}¢
-              </button>
-            </div>
+            {/* Position toggle / option selector */}
+            {isMulti && options ? (
+              <div className="space-y-2">
+                <label className="text-xs text-muted-foreground block">Select an option</label>
+                {options.map((opt, i) => {
+                  const pct = Math.round(opt.price * 100);
+                  const isSelected = selectedOption === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => setSelectedOption(opt.id)}
+                      className={`w-full py-2.5 px-3 rounded-lg text-sm font-medium transition-all text-left flex items-center justify-between ${
+                        isSelected
+                          ? `${OPTION_COLORS[i % OPTION_COLORS.length]} border`
+                          : "bg-muted/30 text-muted-foreground border border-transparent hover:bg-muted/50"
+                      }`}
+                      data-testid={`button-option-${opt.id}`}
+                    >
+                      <span>{opt.label}</span>
+                      <span className="tabular-nums">{pct}¢</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setPosition("yes")}
+                  className={`py-3 rounded-lg text-sm font-semibold transition-all ${
+                    position === "yes"
+                      ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 glow-green"
+                      : "bg-muted/30 text-muted-foreground border border-transparent hover:bg-muted/50"
+                  }`}
+                  data-testid="button-position-yes"
+                >
+                  Buy Yes — {yesPercent}¢
+                </button>
+                <button
+                  onClick={() => setPosition("no")}
+                  className={`py-3 rounded-lg text-sm font-semibold transition-all ${
+                    position === "no"
+                      ? "bg-rose-500/15 text-rose-400 border border-rose-500/30 glow-red"
+                      : "bg-muted/30 text-muted-foreground border border-transparent hover:bg-muted/50"
+                  }`}
+                  data-testid="button-position-no"
+                >
+                  Buy No — {noPercent}¢
+                </button>
+              </div>
+            )}
 
             {/* Amount input */}
             <div>
@@ -227,7 +321,7 @@ export default function MarketDetail() {
               <div className="rounded-lg bg-muted/20 p-3 space-y-1.5">
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>Avg price</span>
-                  <span className="tabular-nums">{position === "yes" ? yesPercent : noPercent}¢</span>
+                  <span className="tabular-nums">{Math.round(selectedPrice * 100)}¢</span>
                 </div>
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>Shares</span>
@@ -242,15 +336,11 @@ export default function MarketDetail() {
 
             <Button
               onClick={handlePlaceBet}
-              disabled={placing || !amount}
-              className={`w-full font-semibold ${
-                position === "yes"
-                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                  : "bg-rose-600 hover:bg-rose-700 text-white"
-              }`}
+              disabled={placing || !amount || (isMulti && !selectedOption)}
+              className="w-full font-semibold"
               data-testid="button-place-bet"
             >
-              {placing ? "Placing..." : `Buy ${position.toUpperCase()}`}
+              {placing ? "Placing..." : isMulti ? (selectedOpt ? `Buy "${selectedOpt.label}"` : "Select an option") : `Buy ${position.toUpperCase()}`}
             </Button>
 
             {!user && (

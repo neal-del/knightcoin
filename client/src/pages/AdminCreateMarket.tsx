@@ -5,7 +5,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, PlusCircle } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trash2 } from "lucide-react";
 
 const CATEGORIES = [
   { value: "sports", label: "School Sports", icon: "🏀" },
@@ -44,6 +44,8 @@ export default function AdminCreateMarket() {
   const [yesPrice, setYesPrice] = useState("0.5");
   const [noPrice, setNoPrice] = useState("0.5");
   const [loading, setLoading] = useState(false);
+  const [marketType, setMarketType] = useState("binary");
+  const [options, setOptions] = useState<string[]>(["", ""]);
 
   // Auto-resolution config
   const [ticker, setTicker] = useState("");
@@ -59,6 +61,14 @@ export default function AdminCreateMarket() {
       return;
     }
 
+    if (marketType !== "binary") {
+      const validOptions = options.filter((o) => o.trim());
+      if (validOptions.length < 2) {
+        toast({ title: "Add at least 2 options for multi-outcome markets", variant: "destructive" });
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       let resolutionData: any = null;
@@ -67,12 +77,12 @@ export default function AdminCreateMarket() {
       } else if (resolutionSource === "api_crypto") {
         resolutionData = { symbol: ticker, targetPrice: parseFloat(targetPrice), condition };
       } else if (resolutionSource === "api_sports") {
-        resolutionData = { topic: ticker }; // using ticker field for generic topic
+        resolutionData = { topic: ticker };
       } else if (resolutionSource === "api_news") {
         resolutionData = { topic: ticker };
       }
 
-      await apiRequest("POST", "/api/admin/markets", {
+      const body: any = {
         title,
         description,
         category,
@@ -82,9 +92,16 @@ export default function AdminCreateMarket() {
         featured,
         resolutionSource,
         resolutionData,
+        marketType,
         yesPrice: parseFloat(yesPrice),
         noPrice: parseFloat(noPrice),
-      });
+      };
+
+      if (marketType !== "binary") {
+        body.options = options.filter((o) => o.trim());
+      }
+
+      await apiRequest("POST", "/api/admin/markets", body);
 
       queryClient.invalidateQueries({ queryKey: ["/api/admin/markets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
@@ -133,6 +150,63 @@ export default function AdminCreateMarket() {
             data-testid="input-market-description"
           />
         </div>
+
+        {/* Market Type */}
+        <div>
+          <label className="text-xs text-muted-foreground mb-1.5 block">Market Type</label>
+          <select
+            value={marketType}
+            onChange={(e) => setMarketType(e.target.value)}
+            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            data-testid="select-market-type"
+          >
+            <option value="binary">Binary (Yes/No)</option>
+            <option value="multi_outcome">Multi-Outcome</option>
+            <option value="time_bracket">Time Bracket</option>
+          </select>
+        </div>
+
+        {/* Options for non-binary markets */}
+        {marketType !== "binary" && (
+          <div className="space-y-3">
+            <label className="text-xs text-muted-foreground block">
+              {marketType === "time_bracket" ? "Time Brackets" : "Options"}
+            </label>
+            {options.map((opt, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Input
+                  placeholder={marketType === "time_bracket" ? `e.g. Before March 2026` : `Option ${i + 1}`}
+                  value={opt}
+                  onChange={(e) => {
+                    const next = [...options];
+                    next[i] = e.target.value;
+                    setOptions(next);
+                  }}
+                  className="bg-card flex-1"
+                  data-testid={`input-option-${i}`}
+                />
+                {options.length > 2 && (
+                  <button
+                    type="button"
+                    onClick={() => setOptions(options.filter((_, j) => j !== i))}
+                    className="p-2 rounded-md text-muted-foreground hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                    data-testid={`button-remove-option-${i}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setOptions([...options, ""])}
+              className="text-xs text-primary hover:text-primary/80 transition-colors"
+              data-testid="button-add-option"
+            >
+              + Add option
+            </button>
+          </div>
+        )}
 
         {/* Category + Subcategory */}
         <div className="grid grid-cols-2 gap-4">
@@ -193,8 +267,8 @@ export default function AdminCreateMarket() {
           </div>
         </div>
 
-        {/* Initial prices */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* Initial prices — binary only */}
+        {marketType === "binary" && <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="text-xs text-muted-foreground mb-1.5 block">Initial YES Price (0-1)</label>
             <Input
@@ -227,7 +301,7 @@ export default function AdminCreateMarket() {
               className="bg-card tabular-nums"
             />
           </div>
-        </div>
+        </div>}
 
         {/* Resolution source */}
         <div>

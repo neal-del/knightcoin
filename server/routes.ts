@@ -397,16 +397,24 @@ export async function registerRoutes(
   // --- Admin: Create Market ---
   app.post("/api/admin/markets", requireAdmin, async (req, res) => {
     try {
-      const { title, description, category, subcategory, closesAt, icon, featured, resolutionSource, resolutionData, yesPrice, noPrice } = req.body;
+      const { title, description, category, subcategory, closesAt, icon, featured, resolutionSource, resolutionData, yesPrice, noPrice, marketType, options } = req.body;
       if (!title || !description || !category || !closesAt) {
         return res.status(400).json({ error: "title, description, category, and closesAt are required" });
       }
       const adminUser = (req as any).adminUser;
+      const mType = marketType || "binary";
+
+      // For multi-outcome / time-bracket markets, require options
+      if ((mType === "multi_outcome" || mType === "time_bracket") && (!options || !Array.isArray(options) || options.length < 2)) {
+        return res.status(400).json({ error: "Multi-outcome and time-bracket markets require at least 2 options" });
+      }
+
       const market = await storage.createMarket({
         title,
         description,
         category,
         subcategory: subcategory || null,
+        marketType: mType,
         yesPrice: yesPrice || 0.5,
         noPrice: noPrice || 0.5,
         closesAt,
@@ -417,6 +425,20 @@ export async function registerRoutes(
         resolutionSource: resolutionSource || "manual",
         resolutionData: resolutionData ? JSON.stringify(resolutionData) : null,
       });
+
+      // Create options for multi-outcome / time-bracket markets
+      if (mType !== "binary" && options && Array.isArray(options)) {
+        const equalPrice = +(1 / options.length).toFixed(4);
+        for (let i = 0; i < options.length; i++) {
+          await storage.createMarketOption({
+            marketId: market.id,
+            label: options[i].label || options[i],
+            price: options[i].price || equalPrice,
+            sortOrder: i,
+          });
+        }
+      }
+
       res.json(market);
     } catch (err) {
       res.status(500).json({ error: "Failed to create market" });
@@ -428,7 +450,7 @@ export async function registerRoutes(
     const market = await storage.getMarket(req.params.id);
     if (!market) return res.status(404).json({ error: "Market not found" });
 
-    const allowed = ["title", "description", "category", "subcategory", "closesAt", "icon", "featured", "resolutionSource", "resolutionData", "yesPrice", "noPrice"];
+    const allowed = ["title", "description", "category", "subcategory", "closesAt", "icon", "featured", "resolutionSource", "resolutionData", "yesPrice", "noPrice", "marketType"];
     const updates: any = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
@@ -540,6 +562,235 @@ export async function registerRoutes(
       }
     }
     res.json({ ok: true, usersAffected: count });
+  });
+
+  // ═══════════════════════════════════════════
+  // MARKET OPTIONS ROUTES
+  // ═══════════════════════════════════════════
+
+  app.get("/api/markets/:id/options", async (req, res) => {
+    const market = await storage.getMarket(req.params.id);
+    if (!market) return res.status(404).json({ error: "Market not found" });
+    const options = await storage.getMarketOptions(req.params.id);
+    res.json(options);
+  });
+
+  // ═══════════════════════════════════════════
+  // MULTI-OUTCOME BETTING
+  // ═══════════════════════════════════════════
+
+  app.post("/api/bets/multi", async (req, res) => {
+    const userId = getCurrentUserId(req);
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+    try {
+      const { marketId, optionId, amount } = req.body;
+      if (!marketId || !optionId || !amount) {
+        return res.status(400).json({ error: "marketId, optionId, and amount are required" });
+      }
+      if (amount <= 0) return res.status(400).json({ error: "Amount must be positive" });
+
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ error: "User not found" });
+      if (user.balance < amount) {
+        return res.status(400).json({ error: "Insufficient KnightCoin balance" });
+      }
+
+      const market = await storage.getMarket(marketId);
+      if (!market) return res.status(404).json({ error: "Market not found" });
+      if (market.resolved) return res.status(400).json({ error: "Market already resolved" });
+
+      const option = await storage.getMarketOption(optionId);
+      if (!option || option.marketId !== marketId) {
+        return res.status(400).json({ error: "Invalid option for this market" });
+      }
+
+      // Create the bet — position stores the optionId
+      const bet = await storage.createBet({
+        userId,
+        marketId,
+        position: optionId,
+        amount,
+        price: option.price,
+        createdAt: new Date().toISOString(),
+      });
+
+      // Deduct balance
+      await storage.updateUserBalance(userId, -amount);
+      await storage.updateUserStats(userId, { totalBets: user.totalBets + 1 });
+
+      // Update option prices — selected goes up, others go down proportionally
+      const allOptions = await storage.getMarketOptions(marketId);
+      const impact = Math.min(amount / 1000, 0.05);
+      const selectedIdx = allOptions.findIndex((o) => o.id === optionId);
+      if (selectedIdx >= 0) {
+        const newPrice = Math.min(0.95, allOptions[selectedIdx].price + impact);
+        const remaining = 1 - newPrice;
+        const othersTotal = allOptions.reduce((s, o, i) => i === selectedIdx ? s : s + o.price, 0);
+        for (let i = 0; i < allOptions.length; i++) {
+          if (i === selectedIdx) {
+            await storage.updateMarketOption(allOptions[i].id, { price: +newPrice.toFixed(4) });
+          } else {
+            const ratio = othersTotal > 0 ? allOptions[i].price / othersTotal : 1 / (allOptions.length - 1);
+            const adjusted = Math.max(0.01, +(remaining * ratio).toFixed(4));
+            await storage.updateMarketOption(allOptions[i].id, { price: adjusted });
+          }
+        }
+      }
+
+      // Update market volume/totalBets
+      await storage.updateMarketPrice(marketId, market.yesPrice, market.noPrice, amount);
+
+      await storage.createTransaction({
+        userId,
+        type: "bet_placed",
+        amount: -amount,
+        description: `Bet ${amount} KC on "${option.label}" for "${market.title}"`,
+        createdAt: new Date().toISOString(),
+      });
+
+      res.json(bet);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to place bet" });
+    }
+  });
+
+  // ═══════════════════════════════════════════
+  // ADMIN: RESOLVE MULTI-OUTCOME MARKET
+  // ═══════════════════════════════════════════
+
+  app.post("/api/admin/markets/:id/resolve-option", requireAdmin, async (req, res) => {
+    const { winnerOptionId } = req.body;
+    if (!winnerOptionId) {
+      return res.status(400).json({ error: "winnerOptionId is required" });
+    }
+
+    const market = await storage.getMarket(req.params.id);
+    if (!market) return res.status(404).json({ error: "Market not found" });
+    if (market.resolved) return res.status(400).json({ error: "Market already resolved" });
+
+    const options = await storage.getMarketOptions(req.params.id);
+    const winner = options.find((o) => o.id === winnerOptionId);
+    if (!winner) return res.status(400).json({ error: "Invalid winner option" });
+
+    const adminUser = (req as any).adminUser;
+
+    // Mark all options resolved, winner flagged
+    for (const opt of options) {
+      await storage.updateMarketOption(opt.id, {
+        resolved: true,
+        isWinner: opt.id === winnerOptionId,
+      });
+    }
+
+    // Mark market resolved (outcome = true just means resolved)
+    await storage.resolveMarket(req.params.id, true, adminUser.id);
+
+    // Settle bets — position stores optionId for multi-outcome bets
+    const unsettledBets = await storage.getUnsettledBetsByMarket(req.params.id);
+    for (const bet of unsettledBets) {
+      const won = bet.position === winnerOptionId;
+      if (won) {
+        const payout = bet.amount / bet.price;
+        await storage.settleBet(bet.id, payout);
+        await storage.updateUserBalance(bet.userId, payout);
+        const betUser = await storage.getUser(bet.userId);
+        if (betUser) {
+          await storage.updateUserStats(bet.userId, {
+            totalWinnings: betUser.totalWinnings + payout,
+            correctPredictions: betUser.correctPredictions + 1,
+          });
+        }
+        await storage.createTransaction({
+          userId: bet.userId,
+          type: "payout",
+          amount: payout,
+          description: `Won ${payout.toFixed(1)} KC on "${winner.label}" bet`,
+          createdAt: new Date().toISOString(),
+        });
+      } else {
+        await storage.settleBet(bet.id, 0);
+        await storage.createTransaction({
+          userId: bet.userId,
+          type: "bet_lost",
+          amount: 0,
+          description: `Lost ${bet.amount.toFixed(1)} KC — "${winner.label}" won`,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    const updated = await storage.getMarket(req.params.id);
+    res.json({ market: updated, settledBets: unsettledBets.length });
+  });
+
+  // ═══════════════════════════════════════════
+  // MARKET REQUEST ROUTES
+  // ═══════════════════════════════════════════
+
+  // User creates a market request
+  app.post("/api/market-requests", async (req, res) => {
+    const userId = getCurrentUserId(req);
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+    try {
+      const { title, description, category } = req.body;
+      if (!title || !description || !category) {
+        return res.status(400).json({ error: "title, description, and category are required" });
+      }
+      const mr = await storage.createMarketRequest({
+        userId,
+        title,
+        description,
+        category,
+        createdAt: new Date().toISOString(),
+      });
+      res.json(mr);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to create market request" });
+    }
+  });
+
+  // User gets their own requests
+  app.get("/api/market-requests/mine", async (req, res) => {
+    const userId = getCurrentUserId(req);
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+    const requests = await storage.getMarketRequestsByUser(userId);
+    res.json(requests);
+  });
+
+  // Admin: get all market requests
+  app.get("/api/admin/market-requests", requireAdmin, async (_req, res) => {
+    const requests = await storage.getAllMarketRequests();
+    res.json(requests);
+  });
+
+  // Admin: approve request
+  app.post("/api/admin/market-requests/:id/approve", requireAdmin, async (req, res) => {
+    const adminUser = (req as any).adminUser;
+    const { adminNote } = req.body;
+    const updated = await storage.updateMarketRequest(req.params.id, {
+      status: "approved",
+      adminNote: adminNote || null,
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: adminUser.id,
+    });
+    if (!updated) return res.status(404).json({ error: "Request not found" });
+    res.json(updated);
+  });
+
+  // Admin: reject request
+  app.post("/api/admin/market-requests/:id/reject", requireAdmin, async (req, res) => {
+    const adminUser = (req as any).adminUser;
+    const { adminNote } = req.body;
+    const updated = await storage.updateMarketRequest(req.params.id, {
+      status: "rejected",
+      adminNote: adminNote || null,
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: adminUser.id,
+    });
+    if (!updated) return res.status(404).json({ error: "Request not found" });
+    res.json(updated);
   });
 
   // ═══════════════════════════════════════════
