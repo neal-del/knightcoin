@@ -7,10 +7,17 @@ import pg from "pg";
 const { Pool } = pg;
 
 export async function runMigrations() {
-  const url = process.env.DATABASE_URL;
+  const url =
+    process.env.DATABASE_PRIVATE_URL ||
+    process.env.DATABASE_URL ||
+    process.env.DATABASE_PUBLIC_URL ||
+    "";
   if (!url) return;
 
-  const pool = new Pool({ connectionString: url });
+  const pool = new Pool({
+    connectionString: url,
+    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+  });
 
   try {
     await pool.query(`
