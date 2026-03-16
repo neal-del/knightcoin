@@ -98,6 +98,7 @@ export class MemStorage implements IStorage {
       totalWinnings: 0,
       totalBets: 0,
       correctPredictions: 0,
+      lastDailyBonus: null,
       createdAt: now,
     });
 
@@ -115,6 +116,7 @@ export class MemStorage implements IStorage {
       totalWinnings: 0,
       totalBets: 0,
       correctPredictions: 0,
+      lastDailyBonus: null,
       createdAt: now,
     });
 
@@ -405,6 +407,7 @@ export class MemStorage implements IStorage {
       totalWinnings: 0,
       totalBets: 0,
       correctPredictions: 0,
+      lastDailyBonus: null,
       createdAt: new Date().toISOString(),
     };
     this.users.set(id, user);

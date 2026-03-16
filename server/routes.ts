@@ -304,17 +304,36 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
-    const bonus = 50;
+    const user = await storage.getUser(userId);
+    if (!user) return res.status(401).json({ error: "User not found" });
+
+    // Check 24-hour cooldown
+    if (user.lastDailyBonus) {
+      const lastClaim = new Date(user.lastDailyBonus).getTime();
+      const now = Date.now();
+      const hoursElapsed = (now - lastClaim) / (1000 * 60 * 60);
+      if (hoursElapsed < 24) {
+        const nextClaimAt = new Date(lastClaim + 24 * 60 * 60 * 1000).toISOString();
+        return res.status(429).json({
+          error: "Already claimed today",
+          nextClaimAt,
+          hoursRemaining: +(24 - hoursElapsed).toFixed(1),
+        });
+      }
+    }
+
+    const bonus = 100;
     await storage.updateUserBalance(userId, bonus);
+    await storage.updateUserStats(userId, { lastDailyBonus: new Date().toISOString() });
     await storage.createTransaction({
       userId,
       type: "daily_bonus",
       amount: bonus,
-      description: "Daily login bonus: 50 KC",
+      description: "Daily login bonus: 100 KC",
       createdAt: new Date().toISOString(),
     });
-    const user = await storage.getUser(userId);
-    const { password: _, ...safeUser } = user!;
+    const updated = await storage.getUser(userId);
+    const { password: _, ...safeUser } = updated!;
     res.json(safeUser);
   });
 

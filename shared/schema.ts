@@ -16,6 +16,7 @@ export const users = pgTable("users", {
   totalWinnings: real("total_winnings").notNull().default(0),
   totalBets: integer("total_bets").notNull().default(0),
   correctPredictions: integer("correct_predictions").notNull().default(0),
+  lastDailyBonus: text("last_daily_bonus"), // ISO timestamp of last daily claim
   createdAt: text("created_at"),
 });
 

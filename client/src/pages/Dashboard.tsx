@@ -4,13 +4,50 @@ import { useAuth } from "@/lib/auth";
 import MarketCard from "@/components/MarketCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingUp, Zap, ArrowRight, Coins, Gift } from "lucide-react";
+import { TrendingUp, Zap, ArrowRight, Coins, Gift, Clock } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { useState, useEffect } from "react";
 import type { Market } from "@shared/schema";
+
+function useDailyCooldown(lastDailyBonus: string | null | undefined) {
+  const [timeLeft, setTimeLeft] = useState("");
+  const [canClaim, setCanClaim] = useState(true);
+
+  useEffect(() => {
+    if (!lastDailyBonus) {
+      setCanClaim(true);
+      setTimeLeft("");
+      return;
+    }
+
+    const check = () => {
+      const lastClaim = new Date(lastDailyBonus).getTime();
+      const now = Date.now();
+      const diff = (lastClaim + 24 * 60 * 60 * 1000) - now;
+      if (diff <= 0) {
+        setCanClaim(true);
+        setTimeLeft("");
+      } else {
+        setCanClaim(false);
+        const h = Math.floor(diff / (1000 * 60 * 60));
+        const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        setTimeLeft(`${h}h ${m}m`);
+      }
+    };
+
+    check();
+    const interval = setInterval(check, 60000); // update every minute
+    return () => clearInterval(interval);
+  }, [lastDailyBonus]);
+
+  return { canClaim, timeLeft };
+}
 
 export default function Dashboard() {
   const { user, refreshUser } = useAuth();
+  const { toast } = useToast();
 
   const { data: featured, isLoading: featuredLoading } = useQuery<Market[]>({
     queryKey: ["/api/markets/featured"],
@@ -30,13 +67,29 @@ export default function Dashboard() {
     ["politics", "pro-sports", "tech", "crypto"].includes(m.category) && !featuredIds.has(m.id) && !m.resolved
   ).slice(0, 4);
 
+  const { canClaim, timeLeft } = useDailyCooldown(user?.lastDailyBonus);
+  const [claiming, setClaiming] = useState(false);
+
   const handleClaimBonus = async () => {
+    if (!canClaim || claiming) return;
+    setClaiming(true);
     try {
       await apiRequest("POST", "/api/wallet/daily-bonus");
       await refreshUser();
       queryClient.invalidateQueries({ queryKey: ["/api/wallet/transactions"] });
-    } catch {
-      // Already claimed or error
+      toast({ title: "+100 KC", description: "Daily bonus claimed! Come back tomorrow." });
+    } catch (err: any) {
+      // Try to extract message from response
+      try {
+        const body = await err?.json?.();
+        if (body?.hoursRemaining) {
+          toast({ title: "Already claimed today", description: `Next claim in ${Math.ceil(body.hoursRemaining)}h`, variant: "destructive" });
+        }
+      } catch {
+        toast({ title: "Already claimed", description: "Come back tomorrow!", variant: "destructive" });
+      }
+    } finally {
+      setClaiming(false);
     }
   };
 
@@ -83,10 +136,20 @@ export default function Dashboard() {
                   size="sm"
                   onClick={handleClaimBonus}
                   className="gap-1.5"
+                  disabled={!canClaim || claiming}
                   data-testid="button-daily-bonus"
                 >
-                  <Gift className="w-3.5 h-3.5" />
-                  Claim Daily 50 KC
+                  {canClaim ? (
+                    <>
+                      <Gift className="w-3.5 h-3.5" />
+                      {claiming ? "Claiming..." : "Claim Daily 100 KC"}
+                    </>
+                  ) : (
+                    <>
+                      <Clock className="w-3.5 h-3.5" />
+                      Next claim in {timeLeft}
+                    </>
+                  )}
                 </Button>
               </>
             )}
@@ -179,7 +242,7 @@ export default function Dashboard() {
             </div>
             <h3 className="text-sm font-semibold text-foreground mb-1">Earn KnightCoin</h3>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Get 1,000 KC when you sign up, plus 50 KC daily. KnightCoin is an ERC-20 token on the Ethereum network — no real money involved.
+              Get 1,000 KC when you sign up, plus 100 KC daily. KnightCoin is an ERC-20 token on the Ethereum network — no real money involved.
             </p>
           </div>
           <div>

@@ -13,6 +13,7 @@ interface AuthUser {
   totalWinnings: number;
   totalBets: number;
   correctPredictions: number;
+  lastDailyBonus: string | null;
 }
 
 interface AuthContextType {

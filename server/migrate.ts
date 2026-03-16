@@ -110,6 +110,11 @@ export async function runMigrations() {
       ALTER TABLE markets ADD COLUMN IF NOT EXISTS market_type TEXT NOT NULL DEFAULT 'binary';
     `);
 
+    // Add last_daily_bonus column to users if it doesn't exist
+    await pool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_bonus TEXT;
+    `);
+
     console.log("[migrate] Tables verified/created successfully.");
   } catch (err) {
     console.error("[migrate] Migration failed:", err);
