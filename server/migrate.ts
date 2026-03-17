@@ -115,6 +115,16 @@ export async function runMigrations() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_bonus TEXT;
     `);
 
+    // Sessions table — persists login sessions across server restarts
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS sessions (
+        token VARCHAR PRIMARY KEY,
+        user_id VARCHAR NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `);
+
     console.log("[migrate] Tables verified/created successfully.");
   } catch (err) {
     console.error("[migrate] Migration failed:", err);

@@ -5,8 +5,27 @@ import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import { initBlockchain, getBlockchainConfig, getOnChainBalance, verifyTransaction, isBlockchainEnabled } from "./blockchain";
 
-// Secure session management — maps random token → user id
-const sessions: Map<string, string> = new Map();
+// ═══════════════════════════════════════════
+// SESSION MANAGEMENT
+// In-memory fallback + PostgreSQL persistence
+// ═══════════════════════════════════════════
+
+const memSessions: Map<string, { userId: string; expiresAt: string }> = new Map();
+
+// DB session helpers (only used when DATABASE_URL is set)
+let dbPool: any = null;
+async function getDbPool() {
+  if (dbPool) return dbPool;
+  const url = process.env.DATABASE_PRIVATE_URL || process.env.DATABASE_URL || process.env.DATABASE_PUBLIC_URL;
+  if (!url) return null;
+  const pg = await import("pg");
+  dbPool = new pg.default.Pool({
+    connectionString: url,
+    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+    max: 3,
+  });
+  return dbPool;
+}
 
 function parseCookies(req: any): Record<string, string> {
   const header = req.headers.cookie || "";
@@ -23,33 +42,92 @@ function getSessionToken(req: any): string | null {
   return cookies["kc_session"] || null;
 }
 
-function getCurrentUserId(req: any): string | null {
+async function getCurrentUserId(req: any): Promise<string | null> {
   const token = getSessionToken(req);
   if (!token) return null;
-  return sessions.get(token) || null;
+
+  // Try in-memory first
+  const mem = memSessions.get(token);
+  if (mem) {
+    if (new Date(mem.expiresAt) > new Date()) return mem.userId;
+    memSessions.delete(token);
+    return null;
+  }
+
+  // Try database
+  const pool = await getDbPool();
+  if (pool) {
+    try {
+      const { rows } = await pool.query(
+        "SELECT user_id, expires_at FROM sessions WHERE token = $1",
+        [token]
+      );
+      if (rows.length > 0 && new Date(rows[0].expires_at) > new Date()) {
+        // Cache in memory for faster subsequent requests
+        memSessions.set(token, { userId: rows[0].user_id, expiresAt: rows[0].expires_at });
+        return rows[0].user_id;
+      }
+      // Expired — clean up
+      if (rows.length > 0) {
+        await pool.query("DELETE FROM sessions WHERE token = $1", [token]);
+      }
+    } catch (e) {
+      // DB error — fall through
+    }
+  }
+
+  return null;
 }
 
-function createSession(res: any, userId: string) {
+async function createSession(res: any, userId: string, rememberMe: boolean = false) {
   const token = randomBytes(32).toString("hex");
-  sessions.set(token, userId);
-  res.cookie("kc_session", token, {
+  const durationMs = rememberMe
+    ? 30 * 24 * 60 * 60 * 1000  // 30 days
+    : 7 * 24 * 60 * 60 * 1000;  // 7 days (default)
+  const expiresAt = new Date(Date.now() + durationMs).toISOString();
+
+  // Store in memory
+  memSessions.set(token, { userId, expiresAt });
+
+  // Persist to DB if available
+  const pool = await getDbPool();
+  if (pool) {
+    try {
+      await pool.query(
+        "INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES ($1, $2, $3, $4) ON CONFLICT (token) DO UPDATE SET user_id = $2, expires_at = $3",
+        [token, userId, expiresAt, new Date().toISOString()]
+      );
+    } catch (e) {
+      // DB write failed — in-memory session still works for this deploy
+    }
+  }
+
+  const cookieOpts: any = {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     path: "/",
-  });
+    maxAge: durationMs,
+  };
+
+  res.cookie("kc_session", token, cookieOpts);
 }
 
-function destroySession(req: any, res: any) {
+async function destroySession(req: any, res: any) {
   const token = getSessionToken(req);
-  if (token) sessions.delete(token);
+  if (token) {
+    memSessions.delete(token);
+    const pool = await getDbPool();
+    if (pool) {
+      try { await pool.query("DELETE FROM sessions WHERE token = $1", [token]); } catch (e) {}
+    }
+  }
   res.clearCookie("kc_session", { path: "/" });
 }
 
 // Admin middleware
 async function requireAdmin(req: any, res: any, next: any) {
-  const userId = getCurrentUserId(req);
+  const userId = await getCurrentUserId(req);
   if (!userId) {
     return res.status(401).json({ error: "Not authenticated" });
   }
@@ -119,7 +197,7 @@ export async function registerRoutes(
 
   app.post("/api/auth/register", async (req, res) => {
     try {
-      const { username, password, displayName } = req.body;
+      const { username, password, displayName, rememberMe } = req.body;
       if (!username || !password || !displayName) {
         return res.status(400).json({ error: "All fields are required" });
       }
@@ -142,7 +220,7 @@ export async function registerRoutes(
         createdAt: new Date().toISOString(),
       });
 
-      createSession(res, user.id);
+      await createSession(res, user.id, !!rememberMe);
       const { password: _, ...safeUser } = user;
       res.json(safeUser);
     } catch (err) {
@@ -152,7 +230,7 @@ export async function registerRoutes(
 
   app.post("/api/auth/login", async (req, res) => {
     try {
-      const { username, password } = req.body;
+      const { username, password, rememberMe } = req.body;
       const user = await storage.getUserByUsername(username);
       if (!user) {
         return res.status(401).json({ error: "Invalid credentials" });
@@ -164,7 +242,7 @@ export async function registerRoutes(
       if (!isValidPassword) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
-      createSession(res, user.id);
+      await createSession(res, user.id, !!rememberMe);
       const { password: _, ...safeUser } = user;
       res.json(safeUser);
     } catch (err) {
@@ -175,7 +253,7 @@ export async function registerRoutes(
   // Admin login (by email)
   app.post("/api/auth/admin-login", async (req, res) => {
     try {
-      const { email, password } = req.body;
+      const { email, password, rememberMe } = req.body;
       const user = await storage.getUserByEmail(email);
       if (!user) {
         return res.status(401).json({ error: "Invalid credentials" });
@@ -190,7 +268,7 @@ export async function registerRoutes(
       if (!isValidPassword) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
-      createSession(res, user.id);
+      await createSession(res, user.id, !!rememberMe);
       const { password: _, ...safeUser } = user;
       res.json(safeUser);
     } catch (err) {
@@ -199,18 +277,18 @@ export async function registerRoutes(
   });
 
   app.post("/api/auth/logout", async (req, res) => {
-    destroySession(req, res);
+    await destroySession(req, res);
     res.json({ ok: true });
   });
 
   app.get("/api/auth/me", async (req, res) => {
-    const userId = getCurrentUserId(req);
+    const userId = await getCurrentUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
     const user = await storage.getUser(userId);
     if (!user) {
-      destroySession(req, res);
+      await destroySession(req, res);
       return res.status(401).json({ error: "User not found" });
     }
     const { password: _, ...safeUser } = user;
@@ -249,7 +327,7 @@ export async function registerRoutes(
   // ═══════════════════════════════════════════
 
   app.post("/api/bets", async (req, res) => {
-    const userId = getCurrentUserId(req);
+    const userId = await getCurrentUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
@@ -319,7 +397,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/bets/user", async (req, res) => {
-    const userId = getCurrentUserId(req);
+    const userId = await getCurrentUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
@@ -332,7 +410,7 @@ export async function registerRoutes(
   // ═══════════════════════════════════════════
 
   app.get("/api/wallet/transactions", async (req, res) => {
-    const userId = getCurrentUserId(req);
+    const userId = await getCurrentUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
@@ -341,7 +419,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/wallet/daily-bonus", async (req, res) => {
-    const userId = getCurrentUserId(req);
+    const userId = await getCurrentUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
@@ -640,7 +718,7 @@ export async function registerRoutes(
   // ═══════════════════════════════════════════
 
   app.post("/api/bets/multi", async (req, res) => {
-    const userId = getCurrentUserId(req);
+    const userId = await getCurrentUserId(req);
     if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
     try {
@@ -790,7 +868,7 @@ export async function registerRoutes(
 
   // User creates a market request
   app.post("/api/market-requests", async (req, res) => {
-    const userId = getCurrentUserId(req);
+    const userId = await getCurrentUserId(req);
     if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
     try {
@@ -813,7 +891,7 @@ export async function registerRoutes(
 
   // User gets their own requests
   app.get("/api/market-requests/mine", async (req, res) => {
-    const userId = getCurrentUserId(req);
+    const userId = await getCurrentUserId(req);
     if (!userId) return res.status(401).json({ error: "Not authenticated" });
     const requests = await storage.getMarketRequestsByUser(userId);
     res.json(requests);
@@ -867,7 +945,7 @@ export async function registerRoutes(
 
   // Link a MetaMask wallet to the current user's account
   app.post("/api/wallet/link", async (req, res) => {
-    const userId = getCurrentUserId(req);
+    const userId = await getCurrentUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
@@ -890,7 +968,7 @@ export async function registerRoutes(
 
   // Unlink wallet from current user
   app.post("/api/wallet/unlink", async (req, res) => {
-    const userId = getCurrentUserId(req);
+    const userId = await getCurrentUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
@@ -902,7 +980,7 @@ export async function registerRoutes(
 
   // Get on-chain KC balance for the current user's linked wallet
   app.get("/api/wallet/onchain-balance", async (req, res) => {
-    const userId = getCurrentUserId(req);
+    const userId = await getCurrentUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
@@ -921,7 +999,7 @@ export async function registerRoutes(
 
   // Deposit: user sends KC on-chain, we verify and credit their off-chain balance
   app.post("/api/wallet/deposit", async (req, res) => {
-    const userId = getCurrentUserId(req);
+    const userId = await getCurrentUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }
@@ -958,7 +1036,7 @@ export async function registerRoutes(
 
   // Withdrawal: deduct off-chain balance (on-chain transfer happens in browser via MetaMask)
   app.post("/api/wallet/withdraw", async (req, res) => {
-    const userId = getCurrentUserId(req);
+    const userId = await getCurrentUserId(req);
     if (!userId) {
       return res.status(401).json({ error: "Not authenticated" });
     }

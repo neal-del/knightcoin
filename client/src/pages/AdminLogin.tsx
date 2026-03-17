@@ -10,6 +10,7 @@ export default function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const { adminLogin, isAdmin } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -28,7 +29,7 @@ export default function AdminLogin() {
     }
     setLoading(true);
     try {
-      await adminLogin(email, password);
+      await adminLogin(email, password, rememberMe);
       toast({ title: "Welcome, Admin" });
       setLocation("/admin");
     } catch (err: any) {
@@ -74,6 +75,16 @@ export default function AdminLogin() {
               data-testid="input-admin-password"
             />
           </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="rounded border-border bg-card text-primary focus:ring-primary/50 w-3.5 h-3.5"
+              data-testid="checkbox-admin-remember-me"
+            />
+            <span className="text-xs text-muted-foreground">Stay logged in</span>
+          </label>
           <Button type="submit" className="w-full gap-2" disabled={loading} data-testid="button-admin-login">
             {loading ? "Signing in..." : "Admin Sign In"}
             <ArrowRight className="w-4 h-4" />

@@ -13,6 +13,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const { login, register } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -26,10 +27,10 @@ export default function Login() {
     setLoading(true);
     try {
       if (isRegister) {
-        await register(username, password, displayName);
+        await register(username, password, displayName, rememberMe);
         toast({ title: "Welcome to KnightCoin", description: "You've earned 1,000 KC to start trading." });
       } else {
-        await login(username, password);
+        await login(username, password, rememberMe);
         toast({ title: "Welcome back" });
       }
       setLocation("/");
@@ -91,6 +92,16 @@ export default function Login() {
               data-testid="input-password"
             />
           </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="rounded border-border bg-card text-primary focus:ring-primary/50 w-3.5 h-3.5"
+              data-testid="checkbox-remember-me"
+            />
+            <span className="text-xs text-muted-foreground">Stay logged in</span>
+          </label>
           <Button type="submit" className="w-full gap-2" disabled={loading} data-testid="button-submit-auth">
             {loading ? "Loading..." : isRegister ? "Create Account" : "Sign In"}
             <ArrowRight className="w-4 h-4" />
