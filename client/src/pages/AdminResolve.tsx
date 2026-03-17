@@ -18,10 +18,96 @@ import {
   Trophy,
   ChevronDown,
   ChevronUp,
+  History,
 } from "lucide-react";
 import type { Market, MarketOption } from "@shared/schema";
 import { CATEGORY_LABELS } from "@/components/MarketCard";
 import { useState } from "react";
+
+interface EnrichedBet {
+  id: string;
+  userId: string;
+  displayName: string;
+  position: string;
+  amount: number;
+  price: number;
+  settled: boolean;
+  payout: number | null;
+  createdAt: string;
+}
+
+/** Sub-component: collapsible bet history for a market */
+function MarketBetHistory({ marketId }: { marketId: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const { data: bets, isLoading } = useQuery<EnrichedBet[]>({
+    queryKey: ["/api/admin/markets", marketId, "bets"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/admin/markets/${marketId}/bets`);
+      return res.json();
+    },
+    enabled: expanded, // only fetch when expanded
+  });
+
+  return (
+    <div className="border-t border-border pt-3 mt-3">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <History className="w-3.5 h-3.5" />
+        {expanded ? "Hide" : "Show"} Bet History
+        {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+      </button>
+
+      {expanded && (
+        <div className="mt-3">
+          {isLoading ? (
+            <div className="space-y-1.5">
+              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-8 rounded" />)}
+            </div>
+          ) : bets && bets.length > 0 ? (
+            <div className="rounded-lg border border-border overflow-hidden">
+              <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 px-3 py-2 bg-muted/30 text-[9px] uppercase tracking-widest text-muted-foreground">
+                <span>User</span>
+                <span className="text-right">Side</span>
+                <span className="text-right">Amount</span>
+                <span className="text-right">Price</span>
+                <span className="text-right">Time</span>
+              </div>
+              {bets.map((bet) => (
+                <div
+                  key={bet.id}
+                  className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 items-center px-3 py-2 border-t border-border/50 text-xs"
+                >
+                  <span className="text-foreground font-medium truncate">{bet.displayName}</span>
+                  <span className={`text-right font-semibold ${
+                    bet.position === "YES" ? "text-emerald-400" : bet.position === "NO" ? "text-rose-400" : "text-violet-400"
+                  }`}>
+                    {bet.position}
+                  </span>
+                  <span className="text-right text-foreground tabular-nums">{formatKC(bet.amount)} KC</span>
+                  <span className="text-right text-muted-foreground tabular-nums">{Math.round(bet.price * 100)}¢</span>
+                  <span className="text-right text-muted-foreground tabular-nums whitespace-nowrap">
+                    {new Date(bet.createdAt).toLocaleString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground py-2">No bets placed on this market yet.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Sub-component: resolution controls for a single multi-option market */
 function MultiOptionResolver({ market, resolving, setResolving }: {
@@ -384,6 +470,9 @@ export default function AdminResolve() {
                         </div>
                       )}
                     </div>
+
+                    {/* Bet History */}
+                    <MarketBetHistory marketId={market.id} />
                   </div>
                 );
               })}

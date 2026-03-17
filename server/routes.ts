@@ -968,6 +968,53 @@ export async function registerRoutes(
     res.json(bets);
   });
 
+  // --- Admin: Bet History for a specific market (with user info) ---
+  app.get("/api/admin/markets/:id/bets", requireAdmin, async (req, res) => {
+    const marketId = req.params.id;
+    const market = await storage.getMarket(marketId);
+    if (!market) return res.status(404).json({ error: "Market not found" });
+
+    const marketBets = await storage.getBetsByMarket(marketId);
+    const isMulti = market.marketType !== "binary";
+
+    // Fetch option labels for multi-option markets
+    let optionLabelMap = new Map<string, string>();
+    if (isMulti) {
+      const options = await storage.getMarketOptions(marketId);
+      for (const opt of options) {
+        optionLabelMap.set(opt.id, opt.label);
+      }
+    }
+
+    // Enrich bets with user display names and readable position labels
+    const enriched = await Promise.all(
+      marketBets.map(async (bet) => {
+        const betUser = await storage.getUser(bet.userId);
+        let positionLabel: string;
+        if (bet.position === "yes" || bet.position === "no") {
+          positionLabel = bet.position.toUpperCase();
+        } else {
+          positionLabel = optionLabelMap.get(bet.position) || bet.position;
+        }
+        return {
+          id: bet.id,
+          userId: bet.userId,
+          displayName: betUser?.displayName || betUser?.username || "Unknown",
+          position: positionLabel,
+          amount: bet.amount,
+          price: bet.price,
+          settled: bet.settled,
+          payout: bet.payout,
+          createdAt: bet.createdAt,
+        };
+      })
+    );
+
+    // Sort by most recent first
+    enriched.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    res.json(enriched);
+  });
+
   // --- Admin: Recent Transactions ---
   app.get("/api/admin/transactions", requireAdmin, async (_req, res) => {
     const txs = await storage.getAllTransactions();
@@ -1101,21 +1148,29 @@ export async function registerRoutes(
       await storage.updateUserBalance(userId, -amount);
       await storage.updateUserStats(userId, { totalBets: user.totalBets + 1 });
 
-      // Update option prices — selected goes up, others go down proportionally
+      // Update option prices based on market type
       const allOptions = await storage.getMarketOptions(marketId);
       const impact = Math.min(amount / 1000, 0.05);
       const selectedIdx = allOptions.findIndex((o) => o.id === optionId);
       if (selectedIdx >= 0) {
         const newPrice = Math.min(0.95, allOptions[selectedIdx].price + impact);
-        const remaining = 1 - newPrice;
-        const othersTotal = allOptions.reduce((s, o, i) => i === selectedIdx ? s : s + o.price, 0);
-        for (let i = 0; i < allOptions.length; i++) {
-          if (i === selectedIdx) {
-            await storage.updateMarketOption(allOptions[i].id, { price: +newPrice.toFixed(4) });
-          } else {
-            const ratio = othersTotal > 0 ? allOptions[i].price / othersTotal : 1 / (allOptions.length - 1);
-            const adjusted = Math.max(0.01, +(remaining * ratio).toFixed(4));
-            await storage.updateMarketOption(allOptions[i].id, { price: adjusted });
+
+        if (market.exclusiveMulti === false) {
+          // Non-exclusive: each option is independent (like binary bets)
+          // Only the selected option's price changes; others stay the same
+          await storage.updateMarketOption(allOptions[selectedIdx].id, { price: +newPrice.toFixed(4) });
+        } else {
+          // Mutually exclusive: prices must sum to 1
+          const remaining = 1 - newPrice;
+          const othersTotal = allOptions.reduce((s, o, i) => i === selectedIdx ? s : s + o.price, 0);
+          for (let i = 0; i < allOptions.length; i++) {
+            if (i === selectedIdx) {
+              await storage.updateMarketOption(allOptions[i].id, { price: +newPrice.toFixed(4) });
+            } else {
+              const ratio = othersTotal > 0 ? allOptions[i].price / othersTotal : 1 / (allOptions.length - 1);
+              const adjusted = Math.max(0.01, +(remaining * ratio).toFixed(4));
+              await storage.updateMarketOption(allOptions[i].id, { price: adjusted });
+            }
           }
         }
       }
