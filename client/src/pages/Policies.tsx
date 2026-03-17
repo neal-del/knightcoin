@@ -111,7 +111,7 @@ export default function Policies() {
       <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
         <p className="text-sm text-foreground/80 leading-relaxed">
           The Knight Market is a student-run prediction market designed for fun and education.
-          It is not affiliated with, endorsed by, or sponsored by Menlo School.
+          It is not affiliated with, endorsed by, or sponsored by Menlo School; however, we strive to embody the school's stated values by being committed to ethicality, fairness, and respect.
           These policies exist to keep the platform fair, respectful, and enjoyable for
           everyone. Please read them carefully.
         </p>
