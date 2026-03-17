@@ -115,6 +115,25 @@ export async function runMigrations() {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_bonus TEXT;
     `);
 
+    // Add referral columns to users if they don't exist
+    await pool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT UNIQUE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
+    `);
+
+    // Email verification codes table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS email_verification_codes (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        email TEXT NOT NULL,
+        code TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used BOOLEAN NOT NULL DEFAULT false,
+        created_at TEXT NOT NULL
+      );
+    `);
+
     // Sessions table — persists login sessions across server restarts
     await pool.query(`
       CREATE TABLE IF NOT EXISTS sessions (

@@ -17,6 +17,9 @@ export const users = pgTable("users", {
   totalBets: integer("total_bets").notNull().default(0),
   correctPredictions: integer("correct_predictions").notNull().default(0),
   lastDailyBonus: text("last_daily_bonus"), // ISO timestamp of last daily claim
+  referralCode: text("referral_code").unique(), // unique code for referring others
+  referredBy: text("referred_by"), // referral code of the user who referred this user
+  emailVerified: boolean("email_verified").notNull().default(false),
   createdAt: text("created_at"),
 });
 
