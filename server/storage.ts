@@ -14,7 +14,7 @@ export interface IStorage {
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserByWallet(walletAddress: string): Promise<User | undefined>;
-  createUser(user: InsertUser & { email?: string; role?: string }): Promise<User>;
+  createUser(user: InsertUser & { email?: string; role?: string; referralCode?: string; referredBy?: string; emailVerified?: boolean; balance?: number }): Promise<User>;
   updateUserBalance(id: string, amount: number): Promise<void>;
   updateUserStats(id: string, updates: Partial<User>): Promise<void>;
   linkWallet(userId: string, walletAddress: string): Promise<void>;
@@ -99,6 +99,30 @@ export class MemStorage implements IStorage {
       totalBets: 0,
       correctPredictions: 0,
       lastDailyBonus: null,
+      referralCode: "NEAL-ADMIN",
+      referredBy: null,
+      emailVerified: true,
+      createdAt: now,
+    });
+
+    // Create admin user (Allen)
+    const allenId = randomUUID();
+    this.users.set(allenId, {
+      id: allenId,
+      username: "allen.wang",
+      password: "knightcoin2026",
+      displayName: "Allen Wang",
+      email: "allen.wang@menloschool.org",
+      walletAddress: null,
+      role: "admin",
+      balance: 10000,
+      totalWinnings: 0,
+      totalBets: 0,
+      correctPredictions: 0,
+      lastDailyBonus: null,
+      referralCode: "ALLEN-ADMIN",
+      referredBy: null,
+      emailVerified: true,
       createdAt: now,
     });
 
@@ -117,6 +141,9 @@ export class MemStorage implements IStorage {
       totalBets: 0,
       correctPredictions: 0,
       lastDailyBonus: null,
+      referralCode: "DEMO-KNIGHT",
+      referredBy: null,
+      emailVerified: true,
       createdAt: now,
     });
 
@@ -180,7 +207,7 @@ export class MemStorage implements IStorage {
         outcome: null,
         closesAt: "2026-07-01T00:00:00Z",
         createdAt: now,
-        featured: true,
+        featured: false,
         icon: "⚛️",
         createdBy: adminId,
         resolutionSource: "manual",
@@ -247,7 +274,7 @@ export class MemStorage implements IStorage {
         outcome: null,
         closesAt: "2026-06-17T18:00:00Z",
         createdAt: now,
-        featured: true,
+        featured: false,
         icon: "🏛️",
         createdBy: adminId,
         resolutionSource: "api_news",
@@ -335,7 +362,7 @@ export class MemStorage implements IStorage {
         outcome: null,
         closesAt: "2026-07-01T00:00:00Z",
         createdAt: now,
-        featured: true,
+        featured: false,
         icon: "🤖",
         createdBy: adminId,
         resolutionSource: "api_news",
@@ -393,7 +420,7 @@ export class MemStorage implements IStorage {
     );
   }
 
-  async createUser(insertUser: InsertUser & { email?: string; role?: string }): Promise<User> {
+  async createUser(insertUser: InsertUser & { email?: string; role?: string; referralCode?: string; referredBy?: string; emailVerified?: boolean; balance?: number }): Promise<User> {
     const id = randomUUID();
     const user: User = {
       id,
@@ -403,11 +430,14 @@ export class MemStorage implements IStorage {
       email: insertUser.email || null,
       walletAddress: null,
       role: insertUser.role || "user",
-      balance: 1000,
+      balance: insertUser.balance ?? 1000,
       totalWinnings: 0,
       totalBets: 0,
       correctPredictions: 0,
       lastDailyBonus: null,
+      referralCode: insertUser.referralCode || null,
+      referredBy: insertUser.referredBy || null,
+      emailVerified: insertUser.emailVerified ?? false,
       createdAt: new Date().toISOString(),
     };
     this.users.set(id, user);

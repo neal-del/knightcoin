@@ -29,9 +29,30 @@ export async function seedDatabase() {
       totalWinnings: 0,
       totalBets: 0,
       correctPredictions: 0,
+      referralCode: "NEAL-ADMIN",
+      referredBy: null,
+      emailVerified: true,
       createdAt: now,
     })
     .returning();
+
+  // Create admin user (Allen)
+  await db.insert(users).values({
+    username: "allen.wang",
+    password: "knightcoin2026",
+    displayName: "Allen Wang",
+    email: "allen.wang@menloschool.org",
+    walletAddress: null,
+    role: "admin",
+    balance: 10000,
+    totalWinnings: 0,
+    totalBets: 0,
+    correctPredictions: 0,
+    referralCode: "ALLEN-ADMIN",
+    referredBy: null,
+    emailVerified: true,
+    createdAt: now,
+  });
 
   // Create demo user
   await db.insert(users).values({
@@ -45,6 +66,9 @@ export async function seedDatabase() {
     totalWinnings: 0,
     totalBets: 0,
     correctPredictions: 0,
+    referralCode: "DEMO-KNIGHT",
+    referredBy: null,
+    emailVerified: true,
     createdAt: now,
   });
 
@@ -110,7 +134,7 @@ export async function seedDatabase() {
       outcome: null,
       closesAt: "2026-07-01T00:00:00Z",
       createdAt: now,
-      featured: true,
+      featured: false,
       icon: "⚛️",
       createdBy: adminId,
       resolutionSource: "manual",
@@ -176,7 +200,7 @@ export async function seedDatabase() {
       outcome: null,
       closesAt: "2026-06-17T18:00:00Z",
       createdAt: now,
-      featured: true,
+      featured: false,
       icon: "🏛️",
       createdBy: adminId,
       resolutionSource: "api_news",
@@ -276,7 +300,7 @@ export async function seedDatabase() {
       outcome: null,
       closesAt: "2026-07-01T00:00:00Z",
       createdAt: now,
-      featured: true,
+      featured: false,
       icon: "🤖",
       createdBy: adminId,
       resolutionSource: "api_news",
