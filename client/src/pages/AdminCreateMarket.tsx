@@ -45,7 +45,10 @@ export default function AdminCreateMarket() {
   const [noPrice, setNoPrice] = useState("0.5");
   const [loading, setLoading] = useState(false);
   const [marketType, setMarketType] = useState("binary");
-  const [options, setOptions] = useState<string[]>(["", ""]);
+  const [options, setOptions] = useState<{ label: string; price: string }[]>([
+    { label: "", price: "" },
+    { label: "", price: "" },
+  ]);
 
   // Auto-resolution config
   const [ticker, setTicker] = useState("");
@@ -97,21 +100,28 @@ export default function AdminCreateMarket() {
     // Merge: replace empty slots first, then append
     const merged = [...options];
     let insertIdx = 0;
-    for (const opt of parsed) {
+    for (const label of parsed) {
       // Find next empty slot
-      while (insertIdx < merged.length && merged[insertIdx].trim()) {
+      while (insertIdx < merged.length && merged[insertIdx].label.trim()) {
         insertIdx++;
       }
       if (insertIdx < merged.length) {
-        merged[insertIdx] = opt;
+        merged[insertIdx] = { label, price: merged[insertIdx].price };
       } else {
-        merged.push(opt);
+        merged.push({ label, price: "" });
       }
       insertIdx++;
     }
     setOptions(merged);
     setPasteText("");
     setPasteMode(false);
+  };
+
+  /** Distribute equal prices across options (auto-fill empty price fields) */
+  const distributeEqualPrices = () => {
+    const count = options.filter((o) => o.label.trim()).length || options.length;
+    const equalPrice = (1 / count).toFixed(2);
+    setOptions(options.map((o) => ({ ...o, price: equalPrice })));
   };
 
   if (!isAdmin) return null;
@@ -124,10 +134,19 @@ export default function AdminCreateMarket() {
     }
 
     if (marketType !== "binary") {
-      const validOptions = options.filter((o) => o.trim());
+      const validOptions = options.filter((o) => o.label.trim());
       if (validOptions.length < 2) {
         toast({ title: "Add at least 2 options for multi-outcome markets", variant: "destructive" });
         return;
+      }
+      // Validate prices sum to ~1.0 if any custom prices set
+      const hasCustomPrices = validOptions.some((o) => o.price.trim());
+      if (hasCustomPrices) {
+        const priceSum = validOptions.reduce((sum, o) => sum + (parseFloat(o.price) || (1 / validOptions.length)), 0);
+        if (Math.abs(priceSum - 1) > 0.05) {
+          toast({ title: `Option prices should sum to 1.00 (currently ${priceSum.toFixed(2)})`, variant: "destructive" });
+          return;
+        }
       }
     }
 
@@ -160,7 +179,14 @@ export default function AdminCreateMarket() {
       };
 
       if (marketType !== "binary") {
-        body.options = options.filter((o) => o.trim());
+        const validOpts = options.filter((o) => o.label.trim());
+        const hasCustomPrices = validOpts.some((o) => o.price.trim());
+        body.options = validOpts.map((o) => {
+          if (hasCustomPrices) {
+            return { label: o.label.trim(), price: parseFloat(o.price) || +(1 / validOpts.length).toFixed(4) };
+          }
+          return o.label.trim(); // send as string, backend uses equal split
+        });
       }
 
       await apiRequest("POST", "/api/admin/markets", body);
@@ -283,20 +309,43 @@ export default function AdminCreateMarket() {
               </div>
             )}
 
+            {/* Column headers */}
+            <div className="flex items-center gap-2 text-[10px] text-muted-foreground uppercase tracking-wider">
+              <span className="w-5 shrink-0" />
+              <span className="flex-1">Label</span>
+              <span className="w-20 text-center">Price (0-1)</span>
+              {options.length > 2 && <span className="w-10" />}
+            </div>
+
             {/* Individual option inputs */}
             {options.map((opt, i) => (
               <div key={i} className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground w-5 text-right tabular-nums shrink-0">{i + 1}</span>
                 <Input
                   placeholder={marketType === "time_bracket" ? `e.g. Before March 2026` : `Option ${i + 1}`}
-                  value={opt}
+                  value={opt.label}
                   onChange={(e) => {
                     const next = [...options];
-                    next[i] = e.target.value;
+                    next[i] = { ...next[i], label: e.target.value };
                     setOptions(next);
                   }}
                   className="bg-card flex-1"
                   data-testid={`input-option-${i}`}
+                />
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max="0.99"
+                  placeholder={`${(1 / options.length).toFixed(2)}`}
+                  value={opt.price}
+                  onChange={(e) => {
+                    const next = [...options];
+                    next[i] = { ...next[i], price: e.target.value };
+                    setOptions(next);
+                  }}
+                  className="bg-card w-20 tabular-nums text-center"
+                  data-testid={`input-option-price-${i}`}
                 />
                 {options.length > 2 && (
                   <button
@@ -310,14 +359,37 @@ export default function AdminCreateMarket() {
                 )}
               </div>
             ))}
-            <button
-              type="button"
-              onClick={() => setOptions([...options, ""])}
-              className="text-xs text-primary hover:text-primary/80 transition-colors"
-              data-testid="button-add-option"
-            >
-              + Add option
-            </button>
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setOptions([...options, { label: "", price: "" }])}
+                className="text-xs text-primary hover:text-primary/80 transition-colors"
+                data-testid="button-add-option"
+              >
+                + Add option
+              </button>
+              <button
+                type="button"
+                onClick={distributeEqualPrices}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="button-equal-prices"
+              >
+                Split evenly
+              </button>
+            </div>
+            {/* Price sum indicator */}
+            {(() => {
+              const validOpts = options.filter((o) => o.label.trim());
+              const hasAnyPrice = validOpts.some((o) => o.price.trim());
+              if (!hasAnyPrice || validOpts.length < 2) return null;
+              const sum = validOpts.reduce((s, o) => s + (parseFloat(o.price) || 0), 0);
+              const isValid = Math.abs(sum - 1) <= 0.05;
+              return (
+                <p className={`text-[11px] ${isValid ? "text-emerald-400" : "text-rose-400"}`}>
+                  Price total: {sum.toFixed(2)} {isValid ? "\u2713" : "(should be ~1.00)"}
+                </p>
+              );
+            })()}
           </div>
         )}
 
