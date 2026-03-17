@@ -11,8 +11,8 @@ import {
   ArrowLeft,
   CheckCircle2,
   XCircle,
-  Clock,
   MessageSquare,
+  Calendar,
 } from "lucide-react";
 import { CATEGORY_LABELS } from "@/components/MarketCard";
 import type { MarketRequest } from "@shared/schema";
@@ -23,11 +23,18 @@ const STATUS_CONFIG: Record<string, { color: string; label: string }> = {
   rejected: { color: "text-rose-400 border-rose-500/20 bg-rose-500/10", label: "Rejected" },
 };
 
+// Default closing date: 30 days from now
+function defaultClosesAt() {
+  const d = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  return d.toISOString().slice(0, 16); // yyyy-MM-ddTHH:mm format for input
+}
+
 export default function AdminRequests() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
   const [noteMap, setNoteMap] = useState<Record<string, string>>({});
+  const [closesMap, setClosesMap] = useState<Record<string, string>>({});
 
   const { data: requests, isLoading } = useQuery<MarketRequest[]>({
     queryKey: ["/api/admin/market-requests"],
@@ -41,11 +48,20 @@ export default function AdminRequests() {
 
   const handleApprove = async (id: string) => {
     try {
+      const closesAt = closesMap[id]
+        ? new Date(closesMap[id]).toISOString()
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
       await apiRequest("POST", `/api/admin/market-requests/${id}/approve`, {
         adminNote: noteMap[id] || undefined,
+        closesAt,
       });
+      // Invalidate both requests and markets caches
       queryClient.invalidateQueries({ queryKey: ["/api/admin/market-requests"] });
-      toast({ title: "Request approved" });
+      queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/markets/featured"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/markets"] });
+      toast({ title: "Request approved", description: "Market has been created and is now live." });
     } catch (err: any) {
       toast({ title: "Failed", description: err.message, variant: "destructive" });
     }
@@ -130,36 +146,55 @@ export default function AdminRequests() {
                 </div>
 
                 {req.status === "pending" && (
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 relative">
-                      <MessageSquare className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
-                      <input
-                        placeholder="Admin note (optional)"
-                        value={noteMap[req.id] || ""}
-                        onChange={(e) => setNoteMap((m) => ({ ...m, [req.id]: e.target.value }))}
-                        className="w-full rounded-md border border-border bg-muted/30 pl-8 pr-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                        data-testid={`input-admin-note-${req.id}`}
-                      />
+                  <div className="space-y-2">
+                    {/* Admin note */}
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 relative">
+                        <MessageSquare className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
+                        <input
+                          placeholder="Admin note (optional)"
+                          value={noteMap[req.id] || ""}
+                          onChange={(e) => setNoteMap((m) => ({ ...m, [req.id]: e.target.value }))}
+                          className="w-full rounded-md border border-border bg-muted/30 pl-8 pr-3 py-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          data-testid={`input-admin-note-${req.id}`}
+                        />
+                      </div>
                     </div>
-                    <Button
-                      size="sm"
-                      className="gap-1 text-xs h-8 bg-emerald-600 hover:bg-emerald-700 text-white"
-                      onClick={() => handleApprove(req.id)}
-                      data-testid={`button-approve-${req.id}`}
-                    >
-                      <CheckCircle2 className="w-3 h-3" />
-                      Approve
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1 text-xs h-8 text-rose-400 border-rose-500/20 hover:bg-rose-500/10"
-                      onClick={() => handleReject(req.id)}
-                      data-testid={`button-reject-${req.id}`}
-                    >
-                      <XCircle className="w-3 h-3" />
-                      Reject
-                    </Button>
+                    {/* Closing date for approved market */}
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 relative">
+                        <Calendar className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-muted-foreground" />
+                        <input
+                          type="datetime-local"
+                          value={closesMap[req.id] || defaultClosesAt()}
+                          onChange={(e) => setClosesMap((m) => ({ ...m, [req.id]: e.target.value }))}
+                          className="w-full rounded-md border border-border bg-muted/30 pl-8 pr-3 py-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          data-testid={`input-closes-at-${req.id}`}
+                        />
+                      </div>
+                    </div>
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        className="gap-1 text-xs h-8 bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => handleApprove(req.id)}
+                        data-testid={`button-approve-${req.id}`}
+                      >
+                        <CheckCircle2 className="w-3 h-3" />
+                        Approve & Create Market
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1 text-xs h-8 text-rose-400 border-rose-500/20 hover:bg-rose-500/10"
+                        onClick={() => handleReject(req.id)}
+                        data-testid={`button-reject-${req.id}`}
+                      >
+                        <XCircle className="w-3 h-3" />
+                        Reject
+                      </Button>
+                    </div>
                   </div>
                 )}
 

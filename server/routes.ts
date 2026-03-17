@@ -903,18 +903,45 @@ export async function registerRoutes(
     res.json(requests);
   });
 
-  // Admin: approve request
+  // Admin: approve request — also creates the market automatically
   app.post("/api/admin/market-requests/:id/approve", requireAdmin, async (req, res) => {
     const adminUser = (req as any).adminUser;
-    const { adminNote } = req.body;
+    const { adminNote, closesAt, icon, featured } = req.body;
+    
+    // Get the request first
+    const allRequests = await storage.getAllMarketRequests();
+    const marketReq = allRequests.find(r => r.id === req.params.id);
+    if (!marketReq) return res.status(404).json({ error: "Request not found" });
+    if (marketReq.status !== "pending") return res.status(400).json({ error: "Request already reviewed" });
+
+    // Update request status
     const updated = await storage.updateMarketRequest(req.params.id, {
       status: "approved",
       adminNote: adminNote || null,
       reviewedAt: new Date().toISOString(),
       reviewedBy: adminUser.id,
     });
-    if (!updated) return res.status(404).json({ error: "Request not found" });
-    res.json(updated);
+
+    // Auto-create market from the request
+    const defaultCloses = closesAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days default
+    const market = await storage.createMarket({
+      title: marketReq.title,
+      description: marketReq.description,
+      category: marketReq.category,
+      subcategory: null,
+      marketType: "binary",
+      yesPrice: 0.5,
+      noPrice: 0.5,
+      closesAt: defaultCloses,
+      createdAt: new Date().toISOString(),
+      featured: featured || false,
+      icon: icon || "📊",
+      createdBy: adminUser.id,
+      resolutionSource: "manual",
+      resolutionData: null,
+    });
+
+    res.json({ request: updated, market });
   });
 
   // Admin: reject request
