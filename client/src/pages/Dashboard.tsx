@@ -4,7 +4,7 @@ import { useAuth } from "@/lib/auth";
 import MarketCard from "@/components/MarketCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingUp, Zap, ArrowRight, Coins, Gift, Clock } from "lucide-react";
+import { TrendingUp, Zap, ArrowRight, Coins, Gift, Clock, Share2, Copy, Check } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -101,21 +101,20 @@ export default function Dashboard() {
         <div className="relative z-10">
           <div className="flex items-center gap-2 mb-3">
             <Coins className="w-5 h-5 text-primary" />
-            <span className="text-xs uppercase tracking-widest text-primary font-semibold">KnightCoin Exchange</span>
+            <span className="text-xs uppercase tracking-widest text-primary font-semibold">The Knight Market</span>
           </div>
           <h1 className="text-xl md:text-2xl font-bold text-foreground mb-2" data-testid="text-hero-title">
-            Menlo School Prediction Market
+            Prediction Market
           </h1>
           <p className="text-sm text-muted-foreground max-w-lg mb-4">
-            Trade on school events, sports, academics, and real-world outcomes using KnightCoin — 
-            Menlo's own Ethereum-based token. No real money, all the strategy.
+            Trade on school events, sports, academics, and real-world outcomes using KnightCoin (KC). No real money, all the strategy.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             {!user ? (
               <Link href="/login">
                 <Button className="gap-2" data-testid="button-get-started">
                   <Zap className="w-4 h-4" />
-                  Get Started — Earn 1,000 KC
+                  Get Started with Your Menlo Email
                 </Button>
               </Link>
             ) : (
@@ -151,6 +150,7 @@ export default function Dashboard() {
                     </>
                   )}
                 </Button>
+                <ReferralButton />
               </>
             )}
           </div>
@@ -232,17 +232,17 @@ export default function Dashboard() {
         )}
       </section>
 
-      {/* How KnightCoin Works */}
+      {/* How It Works */}
       <section className="rounded-2xl border border-border bg-card p-6 md:p-8">
-        <h2 className="text-base font-semibold text-foreground mb-4">How KnightCoin Works</h2>
+        <h2 className="text-base font-semibold text-foreground mb-4">How It Works</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3">
               <Coins className="w-5 h-5 text-primary" />
             </div>
-            <h3 className="text-sm font-semibold text-foreground mb-1">Earn KnightCoin</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-1">Earn KC</h3>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Get 1,000 KC when you sign up, plus 100 KC daily. KnightCoin is an ERC-20 token on the Ethereum network — no real money involved.
+              Get 1,000 KC when you sign up with your Menlo email, plus 100 KC daily. Refer friends for bonus KC.
             </p>
           </div>
           <div>
@@ -260,11 +260,77 @@ export default function Dashboard() {
             </div>
             <h3 className="text-sm font-semibold text-foreground mb-1">Win & Climb</h3>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Correct predictions pay out at 100¢ per share. Climb the leaderboard and earn bragging rights among Menlo Knights.
+              Correct predictions pay out at 100¢ per share. Climb the leaderboard and earn bragging rights.
             </p>
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+// Referral link generator component
+function ReferralButton() {
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
+
+  const handleGenerate = async () => {
+    setLoading(true);
+    try {
+      const res = await apiRequest("GET", "/api/referral");
+      const data = await res.json();
+      setReferralCode(data.referralCode);
+    } catch {
+      toast({ title: "Failed to get referral link", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopy = () => {
+    if (!referralCode) return;
+    const baseUrl = window.location.origin + window.location.pathname;
+    const link = `${baseUrl}#/login?ref=${referralCode}`;
+    navigator.clipboard.writeText(link);
+    setCopied(true);
+    toast({ title: "Link copied", description: "Share it with your friends!" });
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (!referralCode) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleGenerate}
+        className="gap-1.5"
+        disabled={loading}
+        data-testid="button-generate-referral"
+      >
+        <Share2 className="w-3.5 h-3.5" />
+        {loading ? "Loading..." : "Invite Friends"}
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card/80 border border-border">
+        <span className="text-[11px] text-muted-foreground">Referral:</span>
+        <span className="text-xs font-mono font-medium text-primary">{referralCode}</span>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleCopy}
+        className="gap-1.5 h-8"
+        data-testid="button-copy-referral"
+      >
+        {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+        {copied ? "Copied" : "Copy Link"}
+      </Button>
     </div>
   );
 }

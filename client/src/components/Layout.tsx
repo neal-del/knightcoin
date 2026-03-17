@@ -69,9 +69,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <aside className="hidden md:flex flex-col w-60 border-r border-border bg-card/50 fixed inset-y-0 left-0 z-40" data-testid="sidebar">
         <div className="p-5 border-b border-border">
           <Link href="/" className="flex items-center gap-2.5 no-underline">
-            <KnightCoinLogo />
+            <KnightMarketLogo />
             <div>
-              <span className="text-sm font-bold tracking-tight text-foreground">KnightCoin</span>
+              <span className="text-sm font-bold tracking-tight text-foreground">The Knight Market</span>
               <span className="block text-[10px] uppercase tracking-widest text-muted-foreground">Prediction Market</span>
             </div>
           </Link>
@@ -186,8 +186,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <div className="md:hidden fixed top-0 inset-x-0 z-50 bg-card/95 backdrop-blur border-b border-border">
         <div className="flex items-center justify-between px-4 h-14">
           <Link href="/" className="flex items-center gap-2 no-underline">
-            <KnightCoinLogo size={24} />
-            <span className="text-sm font-bold text-foreground">KnightCoin</span>
+            <KnightMarketLogo size={24} />
+            <span className="text-sm font-bold text-foreground">The Knight Market</span>
           </Link>
           <div className="flex items-center gap-1">
             {user && (
@@ -276,7 +276,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-function KnightCoinLogo({ size = 32 }: { size?: number }) {
+function KnightMarketLogo({ size = 32 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -284,7 +284,7 @@ function KnightCoinLogo({ size = 32 }: { size?: number }) {
       viewBox="0 0 40 40"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      aria-label="KnightCoin logo"
+      aria-label="The Knight Market logo"
     >
       {/* Outer coin ring */}
       <circle cx="20" cy="20" r="18" stroke="currentColor" strokeWidth="1.5" className="text-primary" />
@@ -295,8 +295,8 @@ function KnightCoinLogo({ size = 32 }: { size?: number }) {
         fill="currentColor"
         className="text-primary"
       />
-      {/* K letter subtle */}
-      <text x="20" y="36" textAnchor="middle" fontSize="5" fontWeight="700" fill="currentColor" className="text-primary/60">KC</text>
+      {/* TKM text */}
+      <text x="20" y="36" textAnchor="middle" fontSize="5" fontWeight="700" fill="currentColor" className="text-primary/60">TKM</text>
     </svg>
   );
 }
