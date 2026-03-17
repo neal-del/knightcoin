@@ -332,21 +332,26 @@ function ReferralButton() {
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card/80 border border-border">
-        <span className="text-[11px] text-muted-foreground">Referral:</span>
-        <span className="text-xs font-mono font-medium text-primary">{referralCode}</span>
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-card/80 border border-border">
+          <span className="text-[11px] text-muted-foreground">Referral:</span>
+          <span className="text-xs font-mono font-medium text-primary">{referralCode}</span>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleCopy}
+          className="gap-1.5 h-8"
+          data-testid="button-copy-referral"
+        >
+          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+          {copied ? "Copied" : "Copy Link"}
+        </Button>
       </div>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={handleCopy}
-        className="gap-1.5 h-8"
-        data-testid="button-copy-referral"
-      >
-        {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-        {copied ? "Copied" : "Copy Link"}
-      </Button>
+      <p className="text-[11px] text-muted-foreground leading-relaxed max-w-sm">
+        Copy your invite link and send it to a friend. When they open it and create an account, you get <span className="text-primary font-medium">500 KC</span> and they get <span className="text-primary font-medium">200 KC</span> extra.
+      </p>
     </div>
   );
 }
