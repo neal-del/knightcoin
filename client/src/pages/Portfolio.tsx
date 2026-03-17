@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Wallet, ArrowUpRight, ArrowDownRight, Clock, Gift, TrendingUp } from "lucide-react";
-import type { Bet, Transaction, Market } from "@shared/schema";
+import { apiRequest } from "@/lib/queryClient";
+import type { Bet, Transaction, Market, MarketOption } from "@shared/schema";
 
 export default function Portfolio() {
   const { user } = useAuth();
@@ -25,6 +26,39 @@ export default function Portfolio() {
   });
 
   const marketMap = new Map(markets?.map((m) => [m.id, m]) || []);
+
+  // For multi-option markets, we need to resolve optionId → label
+  // Collect all unique multi-option market IDs from bets
+  const multiMarketIds = Array.from(
+    new Set(
+      (bets || []).filter((b) => {
+        const m = marketMap.get(b.marketId);
+        return m && (m.marketType === "multi_outcome" || m.marketType === "time_bracket");
+      }).map((b) => b.marketId)
+    )
+  );
+
+  // Fetch options for all multi-option markets the user has bets on
+  const { data: allOptionArrays } = useQuery<MarketOption[][]>({
+    queryKey: ["/api/bets/user/options", multiMarketIds.join(",")],
+    queryFn: async () => {
+      if (multiMarketIds.length === 0) return [];
+      const results = await Promise.all(
+        multiMarketIds.map(async (mid) => {
+          const resp = await apiRequest("GET", `/api/markets/${mid}/options`);
+          return resp.json() as Promise<MarketOption[]>;
+        })
+      );
+      return results;
+    },
+    enabled: multiMarketIds.length > 0,
+  });
+
+  // Build a map: optionId → label
+  const optionLabelMap = new Map<string, string>();
+  (allOptionArrays || []).flat().forEach((opt) => {
+    optionLabelMap.set(opt.id, opt.label);
+  });
 
   if (!user) {
     return (
@@ -100,16 +134,33 @@ export default function Portfolio() {
                       </div>
                     </div>
                     <div className="flex items-center gap-4 shrink-0">
-                      <Badge
-                        className={`text-[10px] px-2 py-0.5 font-semibold ${
-                          bet.position === "yes"
-                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                            : "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                        }`}
-                        variant="outline"
-                      >
-                        {bet.position.toUpperCase()}
-                      </Badge>
+                      {(() => {
+                        const m = marketMap.get(bet.marketId);
+                        const isMulti = m && (m.marketType === "multi_outcome" || m.marketType === "time_bracket");
+                        const optionLabel = optionLabelMap.get(bet.position);
+                        if (isMulti && optionLabel) {
+                          return (
+                            <Badge
+                              className="text-[10px] px-2 py-0.5 font-semibold bg-violet-500/10 text-violet-400 border-violet-500/20 max-w-[140px] truncate"
+                              variant="outline"
+                            >
+                              {optionLabel}
+                            </Badge>
+                          );
+                        }
+                        return (
+                          <Badge
+                            className={`text-[10px] px-2 py-0.5 font-semibold ${
+                              bet.position === "yes"
+                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                            }`}
+                            variant="outline"
+                          >
+                            {bet.position.toUpperCase()}
+                          </Badge>
+                        );
+                      })()}
                       <span className="text-sm font-bold text-foreground tabular-nums">{bet.amount} KC</span>
                     </div>
                   </div>
