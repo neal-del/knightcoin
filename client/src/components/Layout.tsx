@@ -1,6 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
+import { formatKC } from "@/lib/format";
 import {
   LayoutDashboard,
   TrendingUp,
@@ -130,7 +131,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div className="mx-3 mb-3 p-3 rounded-lg bg-primary/5 border border-primary/10">
             <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Balance</div>
             <div className="text-lg font-bold text-primary tabular-nums" data-testid="text-balance">
-              {user.balance.toLocaleString()} KC
+              {formatKC(user.balance)} KC
             </div>
             {isAdmin && (
               <div className="flex items-center gap-1 mt-1">
@@ -192,7 +193,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-1">
             {user && (
               <span className="text-xs font-bold text-primary tabular-nums mr-1" data-testid="text-mobile-balance">
-                {user.balance.toLocaleString()} KC
+                {formatKC(user.balance)} KC
               </span>
             )}
             <button

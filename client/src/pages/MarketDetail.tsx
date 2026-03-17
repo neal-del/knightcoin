@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { formatKC } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,7 +56,7 @@ export default function MarketDetail() {
       return;
     }
     if (amt > user.balance) {
-      toast({ title: "Insufficient balance", description: `You have ${user.balance.toLocaleString()} KC.`, variant: "destructive" });
+      toast({ title: "Insufficient balance", description: `You have ${formatKC(user.balance)} KC.`, variant: "destructive" });
       return;
     }
 
@@ -90,12 +91,12 @@ export default function MarketDetail() {
         const opt = options?.find((o) => o.id === selectedOption);
         toast({
           title: "Bet placed",
-          description: `${amt} KC on "${opt?.label}" at ${Math.round((opt?.price || 0.5) * 100)}¢`,
+          description: `${formatKC(amt)} KC on "${opt?.label}" at ${Math.round((opt?.price || 0.5) * 100)}¢`,
         });
       } else {
         toast({
           title: "Bet placed",
-          description: `${amt} KC on ${position.toUpperCase()} at ${Math.round((position === "yes" ? market!.yesPrice : market!.noPrice) * 100)}¢`,
+          description: `${formatKC(amt)} KC on ${position.toUpperCase()} at ${Math.round((position === "yes" ? market!.yesPrice : market!.noPrice) * 100)}¢`,
         });
       }
     } catch (err: any) {
@@ -209,7 +210,7 @@ export default function MarketDetail() {
           <div className="flex items-center gap-6 text-sm text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <TrendingUp className="w-4 h-4" />
-              <strong className="text-foreground">{market.volume.toLocaleString()}</strong> KC volume
+              <strong className="text-foreground">{formatKC(market.volume)}</strong> KC volume
             </span>
             <span className="flex items-center gap-1.5">
               <Users className="w-4 h-4" />
@@ -329,7 +330,7 @@ export default function MarketDetail() {
                 </div>
                 <div className="flex justify-between text-sm font-semibold text-foreground border-t border-border pt-1.5">
                   <span>Potential payout</span>
-                  <span className="text-primary tabular-nums">{potentialPayout} KC</span>
+                  <span className="text-primary tabular-nums">{formatKC(parseFloat(potentialPayout))} KC</span>
                 </div>
               </div>
             )}

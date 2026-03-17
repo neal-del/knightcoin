@@ -1,4 +1,5 @@
 import { useAuth } from "@/lib/auth";
+import { formatKC } from "@/lib/format";
 import { useWallet } from "@/lib/wallet";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -82,7 +83,7 @@ export default function WalletPage() {
               In-App Balance
             </p>
             <p className="text-2xl font-bold text-primary tabular-nums" data-testid="text-offchain-balance">
-              {user.balance.toLocaleString()} KC
+              {formatKC(user.balance)} KC
             </p>
           </div>
         </div>
@@ -139,7 +140,7 @@ export default function WalletPage() {
             <div>
               <p className="text-[10px] uppercase tracking-widest text-muted-foreground">On-Chain Balance</p>
               <p className="text-lg font-bold text-orange-400 tabular-nums" data-testid="text-onchain-balance">
-                {onChainBalance.toLocaleString()} KC
+                {formatKC(onChainBalance)} KC
               </p>
             </div>
             <Button variant="ghost" size="sm" onClick={refreshOnChainBalance} data-testid="button-refresh-onchain">
@@ -286,7 +287,7 @@ export default function WalletPage() {
                   }`}
                 >
                   {tx.amount >= 0 ? "+" : ""}
-                  {tx.amount.toFixed(0)} KC
+                  {formatKC(tx.amount)} KC
                 </span>
               </div>
             ))}

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
+import { formatKC } from "@/lib/format";
 import { Link } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
@@ -142,7 +143,7 @@ export default function AdminMarkets() {
                   <span>{CATEGORY_LABELS[market.category] || market.category}</span>
                   <span className="flex items-center gap-1">
                     <TrendingUp className="w-3 h-3" />
-                    {market.volume.toLocaleString()} KC
+                    {formatKC(market.volume)} KC
                   </span>
                   <span>{market.totalBets} bets</span>
                   <span className="flex items-center gap-1">

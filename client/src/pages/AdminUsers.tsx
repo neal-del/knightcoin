@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
+import { formatKC } from "@/lib/format";
 import { Link } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
@@ -206,10 +207,10 @@ export default function AdminUsers() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <span className="font-bold text-primary tabular-nums">{u.balance.toLocaleString()} KC</span>
+                        <span className="font-bold text-primary tabular-nums">{formatKC(u.balance)} KC</span>
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{u.totalBets}</td>
-                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{u.totalWinnings.toLocaleString()} KC</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{formatKC(u.totalWinnings)} KC</td>
                       <td className="px-4 py-3 text-right">
                         <Button
                           variant="outline"

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
+import { formatKC } from "@/lib/format";
 import { Link, useLocation } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -58,8 +59,8 @@ export default function AdminDashboard() {
         { label: "Active Markets", value: stats.activeMarkets, icon: Activity, color: "text-emerald-400" },
         { label: "Resolved", value: stats.resolvedMarkets, icon: CheckCircle2, color: "text-purple-400" },
         { label: "Total Bets", value: stats.totalBets, icon: BarChart3, color: "text-orange-400" },
-        { label: "Total Volume", value: `${(stats.totalVolume / 1000).toFixed(1)}K KC`, icon: TrendingUp, color: "text-primary" },
-        { label: "KC in Circulation", value: `${(stats.totalKCInCirculation / 1000).toFixed(1)}K`, icon: Coins, color: "text-yellow-400" },
+        { label: "Total Volume", value: `${formatKC(stats.totalVolume)} KC`, icon: TrendingUp, color: "text-primary" },
+        { label: "KC in Circulation", value: `${formatKC(stats.totalKCInCirculation)} KC`, icon: Coins, color: "text-yellow-400" },
       ]
     : [];
 

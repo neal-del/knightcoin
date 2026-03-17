@@ -194,7 +194,7 @@ async function settleMarketBets(marketId: string, outcome: boolean) {
     
     if (won) {
       // Payout = amount / price (since price was the cost per share, payout is 1.0 per share)
-      const payout = bet.amount / bet.price;
+      const payout = Math.round((bet.amount / bet.price) * 100) / 100; // round to 2 decimal places
       await storage.settleBet(bet.id, payout);
       await storage.updateUserBalance(bet.userId, payout);
       
@@ -202,7 +202,7 @@ async function settleMarketBets(marketId: string, outcome: boolean) {
       const user = await storage.getUser(bet.userId);
       if (user) {
         await storage.updateUserStats(bet.userId, {
-          totalWinnings: user.totalWinnings + payout,
+          totalWinnings: Math.round((user.totalWinnings + payout) * 100) / 100,
           correctPredictions: user.correctPredictions + 1,
         });
       }
@@ -211,7 +211,7 @@ async function settleMarketBets(marketId: string, outcome: boolean) {
         userId: bet.userId,
         type: "payout",
         amount: payout,
-        description: `Won ${payout.toFixed(1)} KC on "${bet.position.toUpperCase()}" bet`,
+        description: `Won ${payout.toFixed(2)} KC on "${bet.position.toUpperCase()}" bet`,
         createdAt: new Date().toISOString(),
       });
     } else {

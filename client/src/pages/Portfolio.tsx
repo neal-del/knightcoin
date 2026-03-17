@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Wallet, ArrowUpRight, ArrowDownRight, Clock, Gift, TrendingUp } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { formatKC } from "@/lib/format";
 import type { Bet, Transaction, Market, MarketOption } from "@shared/schema";
 
 export default function Portfolio() {
@@ -81,7 +82,7 @@ export default function Portfolio() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           label="Balance"
-          value={`${user.balance.toLocaleString()} KC`}
+          value={`${formatKC(user.balance)} KC`}
           icon={<Wallet className="w-4 h-4" />}
           color="text-primary"
         />
@@ -93,7 +94,7 @@ export default function Portfolio() {
         />
         <StatCard
           label="Total Winnings"
-          value={`${user.totalWinnings.toLocaleString()} KC`}
+          value={`${formatKC(user.totalWinnings)} KC`}
           icon={<ArrowUpRight className="w-4 h-4" />}
           color="text-emerald-400"
         />
@@ -161,7 +162,7 @@ export default function Portfolio() {
                           </Badge>
                         );
                       })()}
-                      <span className="text-sm font-bold text-foreground tabular-nums">{bet.amount} KC</span>
+                      <span className="text-sm font-bold text-foreground tabular-nums">{formatKC(bet.amount)} KC</span>
                     </div>
                   </div>
                 </Link>
@@ -210,7 +211,7 @@ export default function Portfolio() {
                   </div>
                 </div>
                 <span className={`text-sm font-bold tabular-nums ${tx.amount >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                  {tx.amount >= 0 ? "+" : ""}{tx.amount} KC
+                  {tx.amount >= 0 ? "+" : ""}{formatKC(Math.abs(tx.amount))} KC
                 </span>
               </div>
             ))}

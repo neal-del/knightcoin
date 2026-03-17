@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { formatKC } from "@/lib/format";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Trophy, Medal, TrendingUp } from "lucide-react";
 
@@ -53,7 +54,7 @@ export default function Leaderboard() {
                 </div>
                 <div className="text-sm font-semibold text-foreground truncate">{u.displayName}</div>
                 <div className="text-lg font-bold text-primary tabular-nums mt-1">
-                  {u.balance.toLocaleString()} KC
+                  {formatKC(u.balance)} KC
                 </div>
                 <div className="text-[10px] text-muted-foreground mt-1">
                   {u.totalBets} bets · {u.correctPredictions} correct
@@ -103,7 +104,7 @@ export default function Leaderboard() {
                   <span className="text-sm font-medium text-foreground truncate">{u.displayName}</span>
                 </div>
                 <span className="text-sm font-bold text-primary tabular-nums text-right">
-                  {u.balance.toLocaleString()} KC
+                  {formatKC(u.balance)} KC
                 </span>
                 <span className="text-xs text-muted-foreground tabular-nums text-right hidden md:block">
                   {u.totalBets}

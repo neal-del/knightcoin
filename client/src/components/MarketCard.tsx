@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { formatKC } from "@/lib/format";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { TrendingUp, Clock, Users } from "lucide-react";
@@ -149,7 +150,7 @@ export default function MarketCard({ market }: { market: Market }) {
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1">
               <TrendingUp className="w-3 h-3" />
-              {market.volume.toLocaleString()} KC
+              {formatKC(market.volume)} KC
             </span>
             <span className="flex items-center gap-1">
               <Users className="w-3 h-3" />

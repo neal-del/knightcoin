@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
+import { formatKC } from "@/lib/format";
 import MarketCard from "@/components/MarketCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -122,7 +123,7 @@ export default function Dashboard() {
                 <div className="flex items-center gap-4 px-4 py-2.5 rounded-xl bg-card/80 border border-border">
                   <div>
                     <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Balance</div>
-                    <div className="text-lg font-bold text-primary tabular-nums">{user.balance.toLocaleString()} KC</div>
+                    <div className="text-lg font-bold text-primary tabular-nums">{formatKC(user.balance)} KC</div>
                   </div>
                   <div className="w-px h-8 bg-border" />
                   <div>
