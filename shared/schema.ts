@@ -55,6 +55,7 @@ export const markets = pgTable("markets", {
   resolutionData: text("resolution_data"), // JSON string with API config (e.g. ticker symbol, team id, etc.)
   resolvedAt: text("resolved_at"),
   resolvedBy: text("resolved_by"), // admin user id who resolved
+  exclusiveMulti: boolean("exclusive_multi").notNull().default(true), // true = only one option can win (mutually exclusive), false = multiple options can resolve YES
 });
 
 export const insertMarketSchema = createInsertSchema(markets).omit({

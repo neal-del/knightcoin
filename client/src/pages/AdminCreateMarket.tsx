@@ -45,6 +45,7 @@ export default function AdminCreateMarket() {
   const [noPrice, setNoPrice] = useState("0.5");
   const [loading, setLoading] = useState(false);
   const [marketType, setMarketType] = useState("binary");
+  const [exclusiveMulti, setExclusiveMulti] = useState(true);
   const [options, setOptions] = useState<{ label: string; price: string }[]>([
     { label: "", price: "" },
     { label: "", price: "" },
@@ -176,6 +177,7 @@ export default function AdminCreateMarket() {
         marketType,
         yesPrice: parseFloat(yesPrice),
         noPrice: parseFloat(noPrice),
+        exclusiveMulti: marketType !== "binary" ? exclusiveMulti : true,
       };
 
       if (marketType !== "binary") {
@@ -253,6 +255,27 @@ export default function AdminCreateMarket() {
             <option value="time_bracket">Time Bracket</option>
           </select>
         </div>
+
+        {/* Mutually exclusive toggle for non-binary markets */}
+        {marketType !== "binary" && (
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={exclusiveMulti}
+                onChange={(e) => setExclusiveMulti(e.target.checked)}
+                className="rounded border-border"
+                data-testid="checkbox-exclusive-multi"
+              />
+              <span className="text-sm text-foreground">Mutually exclusive (only one option can win)</span>
+            </label>
+            <p className="text-[11px] text-muted-foreground pl-7">
+              {exclusiveMulti
+                ? "Only one option can resolve YES. All others resolve NO."
+                : "Multiple options can resolve YES independently. Each option is resolved separately."}
+            </p>
+          </div>
+        )}
 
         {/* Options for non-binary markets */}
         {marketType !== "binary" && (

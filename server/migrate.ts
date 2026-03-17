@@ -173,6 +173,11 @@ export async function runMigrations() {
       WHERE username = 'neal.goel' AND role = 'admin' AND email = 'neal.goel@menloschool.org';
     `);
 
+    // Add exclusive_multi column to markets (for non-mutually-exclusive multi-bet markets)
+    await pool.query(`
+      ALTER TABLE markets ADD COLUMN IF NOT EXISTS exclusive_multi BOOLEAN NOT NULL DEFAULT true;
+    `);
+
     console.log("[migrate] Tables verified/created successfully.");
   } catch (err) {
     console.error("[migrate] Migration failed:", err);

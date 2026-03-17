@@ -31,7 +31,10 @@ function MultiOptionResolver({ market, resolving, setResolving }: {
 }) {
   const { toast } = useToast();
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
+  const [selectedWinners, setSelectedWinners] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState(false);
+
+  const isExclusive = market.exclusiveMulti !== false;
 
   const { data: options, isLoading } = useQuery<MarketOption[]>({
     queryKey: ["/api/markets", market.id, "options"],
@@ -41,24 +44,49 @@ function MultiOptionResolver({ market, resolving, setResolving }: {
     },
   });
 
+  const toggleWinner = (optId: string) => {
+    setSelectedWinners((prev) => {
+      const next = new Set(prev);
+      if (next.has(optId)) {
+        next.delete(optId);
+      } else {
+        next.add(optId);
+      }
+      return next;
+    });
+  };
+
   const resolveWithWinner = async () => {
-    if (!selectedWinner) return;
+    if (isExclusive && !selectedWinner) return;
+    if (!isExclusive && selectedWinners.size === 0) return;
+
     setResolving(market.id);
     try {
-      const res = await apiRequest("POST", `/api/admin/markets/${market.id}/resolve-option`, {
-        winnerOptionId: selectedWinner,
-      });
+      const body = isExclusive
+        ? { winnerOptionId: selectedWinner }
+        : { winnerOptionIds: Array.from(selectedWinners) };
+      const res = await apiRequest("POST", `/api/admin/markets/${market.id}/resolve-option`, body);
       const data = await res.json();
       queryClient.invalidateQueries({ queryKey: ["/api/admin/markets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/leaderboard"] });
-      const winnerLabel = options?.find((o) => o.id === selectedWinner)?.label || "selected option";
-      toast({
-        title: `Resolved: ${winnerLabel} wins`,
-        description: `${data.settledBets} bets settled and paid out`,
-      });
+
+      if (isExclusive) {
+        const winnerLabel = options?.find((o) => o.id === selectedWinner)?.label || "selected option";
+        toast({
+          title: `Resolved: ${winnerLabel} wins`,
+          description: `${data.settledBets} bets settled and paid out`,
+        });
+      } else {
+        const winnerLabels = options?.filter((o) => selectedWinners.has(o.id)).map((o) => o.label).join(", ") || "selected options";
+        toast({
+          title: `Resolved: ${selectedWinners.size} winner${selectedWinners.size > 1 ? "s" : ""}`,
+          description: `${winnerLabels} — ${data.settledBets} bets settled`,
+        });
+      }
       setSelectedWinner(null);
+      setSelectedWinners(new Set());
     } catch {
       toast({ title: "Resolution failed", variant: "destructive" });
     } finally {
@@ -77,34 +105,65 @@ function MultiOptionResolver({ market, resolving, setResolving }: {
   const visibleOptions = expanded ? options : options.slice(0, 5);
   const hasMore = options.length > 5;
 
+  const hasSelection = isExclusive ? !!selectedWinner : selectedWinners.size > 0;
+
+  const resolveButtonLabel = () => {
+    if (resolving === market.id) return "Resolving...";
+    if (isExclusive) {
+      return selectedWinner
+        ? `Resolve: ${options.find((o) => o.id === selectedWinner)?.label}`
+        : "Select a winner above";
+    }
+    if (selectedWinners.size === 0) return "Select winners above";
+    const labels = options.filter((o) => selectedWinners.has(o.id)).map((o) => o.label);
+    return `Resolve ${labels.length} winner${labels.length > 1 ? "s" : ""}: ${labels.join(", ")}`;
+  };
+
   return (
     <div className="space-y-3 w-full">
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-        Pick the winning option
+        {isExclusive ? "Pick the winning option" : "Select all winning options (multiple allowed)"}
       </div>
+      {!isExclusive && (
+        <p className="text-[11px] text-amber-400">
+          This is a non-mutually-exclusive market. You can resolve multiple options as winners.
+        </p>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
-        {visibleOptions.map((opt) => (
-          <button
-            key={opt.id}
-            type="button"
-            onClick={() => setSelectedWinner(opt.id === selectedWinner ? null : opt.id)}
-            disabled={resolving === market.id}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-left transition-all text-xs ${
-              opt.id === selectedWinner
-                ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/30"
-                : "border-border bg-card/50 text-foreground hover:border-primary/30 hover:bg-primary/5"
-            }`}
-            data-testid={`option-resolve-${opt.id}`}
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              {opt.id === selectedWinner && <Trophy className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
-              <span className="truncate font-medium">{opt.label}</span>
-            </div>
-            <span className="text-[10px] tabular-nums text-muted-foreground shrink-0 ml-2">
-              {Math.round(opt.price * 100)}¢
-            </span>
-          </button>
-        ))}
+        {visibleOptions.map((opt) => {
+          const isSelected = isExclusive
+            ? opt.id === selectedWinner
+            : selectedWinners.has(opt.id);
+
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => {
+                if (isExclusive) {
+                  setSelectedWinner(opt.id === selectedWinner ? null : opt.id);
+                } else {
+                  toggleWinner(opt.id);
+                }
+              }}
+              disabled={resolving === market.id}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-left transition-all text-xs ${
+                isSelected
+                  ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/30"
+                  : "border-border bg-card/50 text-foreground hover:border-primary/30 hover:bg-primary/5"
+              }`}
+              data-testid={`option-resolve-${opt.id}`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                {isSelected && <Trophy className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                <span className="truncate font-medium">{opt.label}</span>
+              </div>
+              <span className="text-[10px] tabular-nums text-muted-foreground shrink-0 ml-2">
+                {Math.round(opt.price * 100)}¢
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {hasMore && (
@@ -124,16 +183,12 @@ function MultiOptionResolver({ market, resolving, setResolving }: {
       <Button
         size="sm"
         onClick={resolveWithWinner}
-        disabled={!selectedWinner || resolving === market.id}
+        disabled={!hasSelection || resolving === market.id}
         className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:max-w-xs"
         data-testid={`button-resolve-winner-${market.id}`}
       >
         <Trophy className="w-3.5 h-3.5" />
-        {resolving === market.id
-          ? "Resolving..."
-          : selectedWinner
-            ? `Resolve: ${options.find((o) => o.id === selectedWinner)?.label}`
-            : "Select a winner above"}
+        {resolveButtonLabel()}
       </Button>
     </div>
   );
@@ -245,6 +300,11 @@ export default function AdminResolve() {
                           {isMulti && (
                             <Badge className="text-[9px] px-1.5 py-0 bg-violet-500/10 text-violet-400 border-violet-500/20" variant="outline">
                               {market.marketType === "time_bracket" ? "Time Bracket" : "Multi-Option"}
+                            </Badge>
+                          )}
+                          {isMulti && market.exclusiveMulti === false && (
+                            <Badge className="text-[9px] px-1.5 py-0 bg-amber-500/10 text-amber-400 border-amber-500/20" variant="outline">
+                              Non-Exclusive
                             </Badge>
                           )}
                         </div>

@@ -179,6 +179,7 @@ export class MemStorage implements IStorage {
         resolutionData: null,
         resolvedAt: null,
         resolvedBy: null,
+        exclusiveMulti: true,
       },
       {
         title: "Will Menlo's baseball team make CCS playoffs?",
@@ -201,6 +202,7 @@ export class MemStorage implements IStorage {
         resolutionData: null,
         resolvedAt: null,
         resolvedBy: null,
+        exclusiveMulti: true,
       },
       {
         title: "Will the AP Physics 2 class average be above 4?",
@@ -223,6 +225,7 @@ export class MemStorage implements IStorage {
         resolutionData: null,
         resolvedAt: null,
         resolvedBy: null,
+        exclusiveMulti: true,
       },
       {
         title: "Who wins the spring talent show — vocal or instrumental?",
@@ -245,6 +248,7 @@ export class MemStorage implements IStorage {
         resolutionData: null,
         resolvedAt: null,
         resolvedBy: null,
+        exclusiveMulti: true,
       },
       {
         title: "Will the new schedule proposal pass for next year?",
@@ -267,6 +271,7 @@ export class MemStorage implements IStorage {
         resolutionData: null,
         resolvedAt: null,
         resolvedBy: null,
+        exclusiveMulti: true,
       },
       // Macro markets — with auto-resolution
       {
@@ -290,6 +295,7 @@ export class MemStorage implements IStorage {
         resolutionData: JSON.stringify({ topic: "fed_rate_cut_june_2026" }),
         resolvedAt: null,
         resolvedBy: null,
+        exclusiveMulti: true,
       },
       {
         title: "Will Tesla stock close above $300 by end of Q2 2026?",
@@ -312,6 +318,7 @@ export class MemStorage implements IStorage {
         resolutionData: JSON.stringify({ ticker: "TSLA", targetPrice: 300, condition: "above" }),
         resolvedAt: null,
         resolvedBy: null,
+        exclusiveMulti: true,
       },
       {
         title: "Will the Warriors make the 2026 NBA playoffs?",
@@ -334,6 +341,7 @@ export class MemStorage implements IStorage {
         resolutionData: JSON.stringify({ league: "NBA", team: "Warriors", event: "playoffs_2026" }),
         resolvedAt: null,
         resolvedBy: null,
+        exclusiveMulti: true,
       },
       {
         title: "Will Bitcoin hit $150k before end of 2026?",
@@ -356,6 +364,7 @@ export class MemStorage implements IStorage {
         resolutionData: JSON.stringify({ symbol: "BTC", targetPrice: 150000, condition: "above" }),
         resolvedAt: null,
         resolvedBy: null,
+        exclusiveMulti: true,
       },
       {
         title: "Will OpenAI release GPT-5 before July 2026?",
@@ -378,6 +387,7 @@ export class MemStorage implements IStorage {
         resolutionData: JSON.stringify({ topic: "openai_gpt5_release" }),
         resolvedAt: null,
         resolvedBy: null,
+        exclusiveMulti: true,
       },
       {
         title: "Will the 49ers win the NFC West in the 2026 season?",
@@ -400,6 +410,7 @@ export class MemStorage implements IStorage {
         resolutionData: JSON.stringify({ league: "NFL", team: "49ers", event: "nfc_west_2026" }),
         resolvedAt: null,
         resolvedBy: null,
+        exclusiveMulti: true,
       },
     ];
 
@@ -559,7 +570,8 @@ export class MemStorage implements IStorage {
       outcome: null,
       resolvedAt: null,
       resolvedBy: null,
-    };
+      exclusiveMulti: insertMarket.exclusiveMulti ?? true,
+    } as Market;
     this.markets.set(id, market);
     return market;
   }

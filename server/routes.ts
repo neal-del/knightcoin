@@ -759,7 +759,7 @@ export async function registerRoutes(
   // --- Admin: Create Market ---
   app.post("/api/admin/markets", requireAdmin, async (req, res) => {
     try {
-      const { title, description, category, subcategory, closesAt, icon, featured, resolutionSource, resolutionData, yesPrice, noPrice, marketType, options } = req.body;
+      const { title, description, category, subcategory, closesAt, icon, featured, resolutionSource, resolutionData, yesPrice, noPrice, marketType, options, exclusiveMulti } = req.body;
       if (!title || !description || !category || !closesAt) {
         return res.status(400).json({ error: "title, description, category, and closesAt are required" });
       }
@@ -789,6 +789,7 @@ export async function registerRoutes(
         createdBy: adminUser.id,
         resolutionSource: resolutionSource || "manual",
         resolutionData: resolutionData ? JSON.stringify(resolutionData) : null,
+        exclusiveMulti: exclusiveMulti !== undefined ? !!exclusiveMulti : true,
       });
 
       // Create options for multi-outcome / time-bracket markets
@@ -815,7 +816,7 @@ export async function registerRoutes(
     const market = await storage.getMarket(req.params.id);
     if (!market) return res.status(404).json({ error: "Market not found" });
 
-    const allowed = ["title", "description", "category", "subcategory", "closesAt", "icon", "featured", "resolutionSource", "resolutionData", "yesPrice", "noPrice", "marketType"];
+    const allowed = ["title", "description", "category", "subcategory", "closesAt", "icon", "featured", "resolutionSource", "resolutionData", "yesPrice", "noPrice", "marketType", "exclusiveMulti"];
     const updates: any = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
@@ -1080,26 +1081,47 @@ export async function registerRoutes(
   // ═══════════════════════════════════════════
 
   app.post("/api/admin/markets/:id/resolve-option", requireAdmin, async (req, res) => {
-    const { winnerOptionId } = req.body;
-    if (!winnerOptionId) {
-      return res.status(400).json({ error: "winnerOptionId is required" });
-    }
+    const { winnerOptionId, winnerOptionIds } = req.body;
 
     const market = await storage.getMarket(req.params.id);
     if (!market) return res.status(404).json({ error: "Market not found" });
     if (market.resolved) return res.status(400).json({ error: "Market already resolved" });
 
     const options = await storage.getMarketOptions(req.params.id);
-    const winner = options.find((o) => o.id === winnerOptionId);
-    if (!winner) return res.status(400).json({ error: "Invalid winner option" });
-
     const adminUser = (req as any).adminUser;
 
-    // Mark all options resolved, winner flagged
+    // Determine winner IDs based on exclusive vs non-exclusive
+    let winnerIds: string[];
+
+    if (market.exclusiveMulti) {
+      // Mutually exclusive: single winner
+      if (!winnerOptionId) {
+        return res.status(400).json({ error: "winnerOptionId is required" });
+      }
+      const winner = options.find((o) => o.id === winnerOptionId);
+      if (!winner) return res.status(400).json({ error: "Invalid winner option" });
+      winnerIds = [winnerOptionId];
+    } else {
+      // Non-exclusive: multiple winners allowed
+      const ids = winnerOptionIds || (winnerOptionId ? [winnerOptionId] : []);
+      if (!Array.isArray(ids) || ids.length === 0) {
+        return res.status(400).json({ error: "winnerOptionIds (array) is required for non-exclusive markets" });
+      }
+      for (const id of ids) {
+        if (!options.find((o) => o.id === id)) {
+          return res.status(400).json({ error: `Invalid option id: ${id}` });
+        }
+      }
+      winnerIds = ids;
+    }
+
+    const winnerSet = new Set(winnerIds);
+
+    // Mark all options resolved, winners flagged
     for (const opt of options) {
       await storage.updateMarketOption(opt.id, {
         resolved: true,
-        isWinner: opt.id === winnerOptionId,
+        isWinner: winnerSet.has(opt.id),
       });
     }
 
@@ -1108,8 +1130,10 @@ export async function registerRoutes(
 
     // Settle bets — position stores optionId for multi-outcome bets
     const unsettledBets = await storage.getUnsettledBetsByMarket(req.params.id);
+    const winnerLabels = options.filter((o) => winnerSet.has(o.id)).map((o) => o.label);
+
     for (const bet of unsettledBets) {
-      const won = bet.position === winnerOptionId;
+      const won = winnerSet.has(bet.position);
       if (won) {
         const payout = bet.amount / bet.price;
         await storage.settleBet(bet.id, payout);
@@ -1121,11 +1145,12 @@ export async function registerRoutes(
             correctPredictions: betUser.correctPredictions + 1,
           });
         }
+        const betOptionLabel = options.find((o) => o.id === bet.position)?.label || "option";
         await storage.createTransaction({
           userId: bet.userId,
           type: "payout",
           amount: payout,
-          description: `Won ${payout.toFixed(1)} KC on "${winner.label}" bet`,
+          description: `Won ${payout.toFixed(1)} KC on "${betOptionLabel}" bet`,
           createdAt: new Date().toISOString(),
         });
       } else {
@@ -1134,7 +1159,7 @@ export async function registerRoutes(
           userId: bet.userId,
           type: "bet_lost",
           amount: 0,
-          description: `Lost ${bet.amount.toFixed(1)} KC — "${winner.label}" won`,
+          description: `Lost ${bet.amount.toFixed(1)} KC — winners: ${winnerLabels.join(", ")}`,
           createdAt: new Date().toISOString(),
         });
       }

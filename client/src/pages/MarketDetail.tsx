@@ -222,6 +222,20 @@ export default function MarketDetail() {
             </span>
           </div>
 
+          {/* Exclusivity note for multi-outcome markets */}
+          {isMulti && (
+            <div className={`rounded-xl border px-4 py-3 text-sm ${
+              market.exclusiveMulti !== false
+                ? "border-violet-500/20 bg-violet-500/5 text-violet-300"
+                : "border-amber-500/20 bg-amber-500/5 text-amber-300"
+            }`}>
+              <strong>Note:</strong>{" "}
+              {market.exclusiveMulti !== false
+                ? "This market is mutually exclusive — only one option can win."
+                : "This market is not mutually exclusive — multiple options can win."}
+            </div>
+          )}
+
           {/* Description */}
           <div className="rounded-xl border border-border bg-card p-5">
             <div className="flex items-center gap-2 mb-2">
