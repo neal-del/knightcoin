@@ -372,7 +372,7 @@ export async function registerRoutes(
         const allUsers = await storage.getAllUsers();
         referrerUser = allUsers.find(u => u.referralCode === referralCode);
         if (referrerUser) {
-          bonusBalance = 1200; // 1000 + 200 referral bonus
+          bonusBalance = 1500; // 1000 + 500 referral bonus
         }
       }
 
@@ -402,11 +402,11 @@ export async function registerRoutes(
 
       // If referred, create bonus transactions
       if (referrerUser) {
-        // New user gets extra 200 KC
+        // New user gets extra 500 KC
         await storage.createTransaction({
           userId: user.id,
           type: "referral",
-          amount: 200,
+          amount: 500,
           description: `Referral bonus: invited by ${referrerUser.displayName}`,
           createdAt: new Date().toISOString(),
         });

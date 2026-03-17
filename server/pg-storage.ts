@@ -1,4 +1,4 @@
-import { eq, desc, and, or, sql, gt } from "drizzle-orm";
+import { eq, desc, and, or, sql, gt, ne } from "drizzle-orm";
 import { db, pool } from "./db";
 import {
   users,
@@ -110,9 +110,9 @@ export class PgStorage implements IStorage {
     return getDb()
       .select()
       .from(users)
-      .where(or(gt(users.totalBets, 0), eq(users.role, "admin")))
+      .where(and(gt(users.totalBets, 0), ne(users.role, "admin")))
       .orderBy(desc(users.balance))
-      .limit(20);
+      .limit(50);
   }
 
   async getAllUsers(): Promise<User[]> {

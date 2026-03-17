@@ -498,9 +498,9 @@ export class MemStorage implements IStorage {
 
   async getLeaderboard(): Promise<User[]> {
     return Array.from(this.users.values())
-      .filter((u) => u.totalBets > 0 || u.role === "admin")
+      .filter((u) => u.totalBets > 0 && u.role !== "admin")
       .sort((a, b) => b.balance - a.balance)
-      .slice(0, 20);
+      .slice(0, 50);
   }
 
   async getAllUsers(): Promise<User[]> {

@@ -94,7 +94,7 @@ export default function MarketCard({ market }: { market: Market }) {
         {/* Price bars */}
         {isMulti && options && options.length > 0 ? (
           <div className="space-y-1.5 mb-3">
-            {options.slice(0, 3).map((opt, i) => {
+            {[...options].sort((a, b) => b.price - a.price).slice(0, 3).map((opt, i) => {
               const pct = Math.round(opt.price * 100);
               const color = OPTION_COLORS[i % OPTION_COLORS.length];
               return (

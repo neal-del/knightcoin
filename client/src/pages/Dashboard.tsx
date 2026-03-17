@@ -5,12 +5,22 @@ import { formatKC } from "@/lib/format";
 import MarketCard from "@/components/MarketCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingUp, Zap, ArrowRight, Coins, Gift, Clock, Share2, Copy, Check } from "lucide-react";
+import { TrendingUp, Zap, ArrowRight, Coins, Gift, Clock, Share2, Copy, Check, Trophy, Medal, ChevronRight } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import type { Market } from "@shared/schema";
+
+interface LeaderboardUser {
+  id: string;
+  username: string;
+  displayName: string;
+  balance: number;
+  totalWinnings: number;
+  totalBets: number;
+  correctPredictions: number;
+}
 
 function useDailyCooldown(lastDailyBonus: string | null | undefined) {
   const [timeLeft, setTimeLeft] = useState("");
@@ -67,6 +77,17 @@ export default function Dashboard() {
   const macroMarkets = allMarkets?.filter((m) =>
     ["politics", "pro-sports", "tech", "crypto"].includes(m.category) && !featuredIds.has(m.id) && !m.resolved
   ).slice(0, 4);
+
+  const { data: leaderboard, isLoading: lbLoading } = useQuery<LeaderboardUser[]>({
+    queryKey: ["/api/leaderboard"],
+  });
+
+  // Find current user's rank (1-based). If user is not on the leaderboard, show "—"
+  const userRank = useMemo(() => {
+    if (!leaderboard || !user) return null;
+    const idx = leaderboard.findIndex((u) => u.id === user.id);
+    return idx >= 0 ? idx + 1 : null;
+  }, [leaderboard, user]);
 
   const { canClaim, timeLeft } = useDailyCooldown(user?.lastDailyBonus);
   const [claiming, setClaiming] = useState(false);
@@ -157,6 +178,92 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Leaderboard Widget */}
+      <section className="rounded-2xl border border-border bg-card overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border bg-muted/20">
+          <div className="flex items-center gap-2">
+            <Trophy className="w-4 h-4 text-yellow-400" />
+            <h2 className="text-sm font-semibold text-foreground">Leaderboard</h2>
+          </div>
+          <Link href="/leaderboard">
+            <span className="flex items-center gap-1 text-xs text-primary hover:underline cursor-pointer">
+              Full leaderboard <ChevronRight className="w-3 h-3" />
+            </span>
+          </Link>
+        </div>
+        {lbLoading ? (
+          <div className="p-4 space-y-2">
+            {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-10 rounded-lg" />)}
+          </div>
+        ) : leaderboard && leaderboard.length > 0 ? (
+          <div>
+            {/* Top 5 */}
+            {leaderboard.slice(0, 5).map((u, i) => {
+              const rank = i + 1;
+              const isCurrentUser = user?.id === u.id;
+              return (
+                <div
+                  key={u.id}
+                  className={`flex items-center gap-3 px-5 py-2.5 border-b border-border/50 last:border-b-0 transition-colors ${
+                    isCurrentUser ? "bg-primary/5" : "hover:bg-muted/10"
+                  }`}
+                >
+                  <span className="w-6 text-center shrink-0">
+                    {rank === 1 ? (
+                      <span className="text-base">👑</span>
+                    ) : rank === 2 ? (
+                      <span className="text-base">🥈</span>
+                    ) : rank === 3 ? (
+                      <span className="text-base">🥉</span>
+                    ) : (
+                      <span className="text-xs font-bold text-muted-foreground tabular-nums">#{rank}</span>
+                    )}
+                  </span>
+                  <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold shrink-0">
+                    {u.displayName.charAt(0)}
+                  </div>
+                  <span className={`text-sm font-medium truncate flex-1 ${
+                    isCurrentUser ? "text-primary" : "text-foreground"
+                  }`}>
+                    {u.displayName}{isCurrentUser ? " (you)" : ""}
+                  </span>
+                  <span className="text-sm font-bold text-primary tabular-nums shrink-0">
+                    {formatKC(u.balance)} KC
+                  </span>
+                </div>
+              );
+            })}
+
+            {/* Current user's rank if not in top 5 */}
+            {user && userRank && userRank > 5 && (
+              <>
+                <div className="px-5 py-1.5 text-center">
+                  <span className="text-[10px] text-muted-foreground tracking-wider">···</span>
+                </div>
+                <div className="flex items-center gap-3 px-5 py-2.5 bg-primary/5 border-t border-border/50">
+                  <span className="w-6 text-center shrink-0">
+                    <span className="text-xs font-bold text-muted-foreground tabular-nums">#{userRank}</span>
+                  </span>
+                  <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold shrink-0">
+                    {user.displayName?.charAt(0) || user.username?.charAt(0) || "?"}
+                  </div>
+                  <span className="text-sm font-medium text-primary truncate flex-1">
+                    {user.displayName || user.username} (you)
+                  </span>
+                  <span className="text-sm font-bold text-primary tabular-nums shrink-0">
+                    {formatKC(user.balance)} KC
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="p-6 text-center text-sm text-muted-foreground">
+            No traders on the leaderboard yet. Start trading to claim the top spot.
+          </div>
+        )}
+      </section>
 
       {/* Featured Markets */}
       {featuredLoading ? (
@@ -350,7 +457,7 @@ function ReferralButton() {
         </Button>
       </div>
       <p className="text-[11px] text-muted-foreground leading-relaxed max-w-sm">
-        Copy your invite link and send it to a friend. When they open it and create an account, you get <span className="text-primary font-medium">500 KC</span> and they get <span className="text-primary font-medium">200 KC</span> extra.
+        Copy your invite link and send it to a friend. When they open it and create an account, you get <span className="text-primary font-medium">500 KC</span> and they get <span className="text-primary font-medium">500 KC</span> extra.
       </p>
     </div>
   );

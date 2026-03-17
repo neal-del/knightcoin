@@ -175,7 +175,7 @@ export default function MarketDetail() {
           {/* Price display */}
           {isMulti && options ? (
             <div className="space-y-2">
-              {options.map((opt, i) => {
+              {[...options].sort((a, b) => b.price - a.price).map((opt, i) => {
                 const pct = Math.round(opt.price * 100);
                 const color = OPTION_COLORS[i % OPTION_COLORS.length];
                 return (
@@ -257,7 +257,7 @@ export default function MarketDetail() {
             {isMulti && options ? (
               <div className="space-y-2">
                 <label className="text-xs text-muted-foreground block">Select an option</label>
-                {options.map((opt, i) => {
+                {[...options].sort((a, b) => b.price - a.price).map((opt, i) => {
                   const pct = Math.round(opt.price * 100);
                   const isSelected = selectedOption === opt.id;
                   return (
