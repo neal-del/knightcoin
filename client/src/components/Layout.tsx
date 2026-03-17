@@ -180,7 +180,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             )}
           </div>
           {user ? (
-            <div className="px-4 py-3 text-[10px] text-muted-foreground/60 truncate">
+            <div className="px-4 py-3 text-xs font-medium text-muted-foreground truncate">
               {user.email || user.username}
             </div>
           ) : (
