@@ -38,10 +38,10 @@ export async function seedDatabase() {
 
   // Create admin user (Allen)
   await db.insert(users).values({
-    username: "allen.wang",
+    username: "allen.admin",
     password: "knightcoin2026",
     displayName: "Allen Wang",
-    email: "allen.wang@menloschool.org",
+    email: "allenwsf@gmail.com",
     walletAddress: null,
     role: "admin",
     balance: 10000,

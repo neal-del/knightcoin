@@ -144,6 +144,19 @@ export async function runMigrations() {
       );
     `);
 
+    // ── Allen admin account fix ──
+    // Remove any old allen.wang admin account and insert new allenwsf@gmail.com admin
+    // (The old allen.wang@menloschool.org may conflict with a regular user account)
+    await pool.query(`
+      DELETE FROM users WHERE username = 'allen.wang' AND role = 'admin';
+    `);
+    // Insert new Allen admin if not already present
+    await pool.query(`
+      INSERT INTO users (id, username, password, display_name, email, role, balance, total_winnings, total_bets, correct_predictions, referral_code, referred_by, email_verified, created_at)
+      SELECT gen_random_uuid(), 'allen.admin', 'knightcoin2026', 'Allen Wang', 'allenwsf@gmail.com', 'admin', 10000, 0, 0, 0, 'ALLEN-ADMIN', NULL, true, NOW()::text
+      WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'allenwsf@gmail.com');
+    `);
+
     console.log("[migrate] Tables verified/created successfully.");
   } catch (err) {
     console.error("[migrate] Migration failed:", err);

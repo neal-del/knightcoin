@@ -109,10 +109,10 @@ export class MemStorage implements IStorage {
     const allenId = randomUUID();
     this.users.set(allenId, {
       id: allenId,
-      username: "allen.wang",
+      username: "allen.admin",
       password: "knightcoin2026",
       displayName: "Allen Wang",
-      email: "allen.wang@menloschool.org",
+      email: "allenwsf@gmail.com",
       walletAddress: null,
       role: "admin",
       balance: 10000,
