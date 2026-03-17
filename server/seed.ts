@@ -22,7 +22,7 @@ export async function seedDatabase() {
       username: "neal.goel",
       password: "knightcoin2026",
       displayName: "Neal Goel",
-      email: "neal.goel@menloschool.org",
+      email: "neal@rgoel.com",
       walletAddress: null,
       role: "admin",
       balance: 10000,

@@ -157,6 +157,13 @@ export async function runMigrations() {
       WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'allenwsf@gmail.com');
     `);
 
+    // ── Neal admin email migration ──
+    // Move admin account from school email to personal email
+    await pool.query(`
+      UPDATE users SET email = 'neal@rgoel.com'
+      WHERE username = 'neal.goel' AND role = 'admin' AND email = 'neal.goel@menloschool.org';
+    `);
+
     console.log("[migrate] Tables verified/created successfully.");
   } catch (err) {
     console.error("[migrate] Migration failed:", err);
