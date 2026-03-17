@@ -7,6 +7,7 @@ const SECTIONS = [
     icon: Shield,
     title: "Nature of the Platform",
     content: [
+      "The Knight Market is an independent, student-run prediction market platform. It is not affiliated with, endorsed by, or sponsored by Menlo School or its administration. All references to Menlo School are made solely because the platform's user base consists of Menlo students.",
       "KnightCoin (KC) is a virtual, in-school prediction market currency with no real-world monetary value. It cannot be exchanged for real money, goods, or services outside of this platform.",
       "Users receive KC for free upon registration and may earn more through successful predictions. KC exists solely to make predictions engaging and to track forecasting accuracy.",
       "The optional MetaMask/Sepolia integration allows users who are interested in blockchain technology to experience crypto wallet interactions in a risk-free educational environment. Using MetaMask is entirely optional — all platform features work with standard KC balances.",
@@ -100,7 +101,7 @@ export default function Policies() {
               Policies & Compliance
             </h1>
             <p className="text-xs text-muted-foreground">
-              Rules and guidelines for the KnightCoin prediction market
+              Rules and guidelines for The Knight Market
             </p>
           </div>
         </div>
@@ -109,7 +110,8 @@ export default function Policies() {
       {/* Intro */}
       <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
         <p className="text-sm text-foreground/80 leading-relaxed">
-          KnightCoin is a school-based prediction market designed for fun and education.
+          The Knight Market is a student-run prediction market designed for fun and education.
+          It is not affiliated with, endorsed by, or sponsored by Menlo School.
           These policies exist to keep the platform fair, respectful, and enjoyable for
           everyone. Please read them carefully.
         </p>
@@ -174,7 +176,7 @@ export default function Policies() {
       {/* Footer note */}
       <div className="text-center pb-4">
         <p className="text-xs text-muted-foreground">
-          Last updated: March 2026. Questions? Contact a KnightCoin admin.
+          Last updated: March 2026. Questions? Contact a Knight Market admin.
         </p>
       </div>
     </div>
