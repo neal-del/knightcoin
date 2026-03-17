@@ -4,6 +4,51 @@ import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import { initBlockchain, getBlockchainConfig, getOnChainBalance, verifyTransaction, isBlockchainEnabled } from "./blockchain";
+import { Resend } from "resend";
+
+// ═══════════════════════════════════════════
+// EMAIL VERIFICATION (Resend)
+// ═══════════════════════════════════════════
+
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
+
+// In-memory store for verification codes (also persisted to DB when available)
+const verificationCodes: Map<string, { code: string; expiresAt: string }> = new Map();
+
+function generateVerificationCode(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+async function sendVerificationEmail(email: string, code: string): Promise<boolean> {
+  if (!resend) {
+    console.log(`[email] No RESEND_API_KEY set. Verification code for ${email}: ${code}`);
+    return true; // Succeed silently in dev
+  }
+  try {
+    await resend.emails.send({
+      from: 'The Knight Market <onboarding@resend.dev>',
+      to: [email],
+      subject: 'Your Knight Market Verification Code',
+      html: `
+        <div style="font-family: sans-serif; max-width: 400px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #06b6d4; margin-bottom: 8px;">The Knight Market</h2>
+          <p style="color: #666; font-size: 14px;">Your email verification code is:</p>
+          <div style="background: #f4f4f5; border-radius: 8px; padding: 16px; text-align: center; margin: 16px 0;">
+            <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #111;">${code}</span>
+          </div>
+          <p style="color: #999; font-size: 12px;">This code expires in 10 minutes. If you didn't request this, ignore this email.</p>
+        </div>
+      `,
+    });
+    return true;
+  } catch (err) {
+    console.error('[email] Failed to send verification email:', err);
+    return false;
+  }
+}
+
+// Categories allowed to be featured
+const FEATURED_ALLOWED_CATEGORIES = ['campus', 'social', 'sports', 'pro-sports'];
 
 // ═══════════════════════════════════════════
 // SESSION MANAGEMENT
@@ -195,35 +240,143 @@ export async function registerRoutes(
   // AUTH ROUTES
   // ═══════════════════════════════════════════
 
+  // Step 1: Send verification code to a @menloschool.org email
+  app.post("/api/auth/send-verification", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).json({ error: "Email is required" });
+      }
+      // Enforce menloschool.org domain
+      if (!email.toLowerCase().endsWith("@menloschool.org")) {
+        return res.status(400).json({ error: "Only @menloschool.org emails are allowed" });
+      }
+      // Check if email already registered
+      const existing = await storage.getUserByEmail(email.toLowerCase());
+      if (existing) {
+        return res.status(400).json({ error: "An account with this email already exists" });
+      }
+      const code = generateVerificationCode();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
+      verificationCodes.set(email.toLowerCase(), { code, expiresAt });
+
+      // Also persist to DB if available
+      const pool = await getDbPool();
+      if (pool) {
+        try {
+          await pool.query(
+            "INSERT INTO email_verification_codes (email, code, expires_at, created_at) VALUES ($1, $2, $3, $4)",
+            [email.toLowerCase(), code, expiresAt, new Date().toISOString()]
+          );
+        } catch (e) { /* in-memory fallback still works */ }
+      }
+
+      const sent = await sendVerificationEmail(email, code);
+      if (!sent) {
+        return res.status(500).json({ error: "Failed to send verification email. Try again." });
+      }
+      res.json({ ok: true, message: "Verification code sent" });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to send verification code" });
+    }
+  });
+
+  // Step 2: Verify code and create account
   app.post("/api/auth/register", async (req, res) => {
     try {
-      const { username, password, displayName, rememberMe } = req.body;
-      if (!username || !password || !displayName) {
+      const { email, code, username, password, displayName, rememberMe, referralCode } = req.body;
+      if (!email || !code || !username || !password || !displayName) {
         return res.status(400).json({ error: "All fields are required" });
       }
       if (password.length < 6) {
         return res.status(400).json({ error: "Password must be at least 6 characters" });
       }
-      const existing = await storage.getUserByUsername(username);
-      if (existing) {
+      if (!email.toLowerCase().endsWith("@menloschool.org")) {
+        return res.status(400).json({ error: "Only @menloschool.org emails are allowed" });
+      }
+
+      // Verify the code
+      const stored = verificationCodes.get(email.toLowerCase());
+      if (!stored || stored.code !== code) {
+        return res.status(400).json({ error: "Invalid verification code" });
+      }
+      if (new Date(stored.expiresAt) < new Date()) {
+        verificationCodes.delete(email.toLowerCase());
+        return res.status(400).json({ error: "Verification code expired. Request a new one." });
+      }
+      verificationCodes.delete(email.toLowerCase());
+
+      // Check for existing username or email
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
         return res.status(400).json({ error: "Username already taken" });
       }
+      const existingEmail = await storage.getUserByEmail(email.toLowerCase());
+      if (existingEmail) {
+        return res.status(400).json({ error: "An account with this email already exists" });
+      }
+
+      // Process referral
+      let referrerUser: any = null;
+      let bonusBalance = 1000; // default signup bonus
+      if (referralCode) {
+        const allUsers = await storage.getAllUsers();
+        referrerUser = allUsers.find(u => u.referralCode === referralCode);
+        if (referrerUser) {
+          bonusBalance = 1200; // 1000 + 200 referral bonus
+        }
+      }
+
+      // Generate unique referral code for new user
+      const userRefCode = username.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) + "-" + randomBytes(3).toString("hex").toUpperCase();
+
       const hashedPassword = await bcrypt.hash(password, 10);
-      const user = await storage.createUser({ username, password: hashedPassword, displayName });
-      
+      const user = await storage.createUser({
+        username,
+        password: hashedPassword,
+        displayName,
+        email: email.toLowerCase(),
+        referralCode: userRefCode,
+        referredBy: referralCode || null,
+        emailVerified: true,
+        balance: bonusBalance,
+      });
+
       // Create signup bonus transaction
       await storage.createTransaction({
         userId: user.id,
         type: "signup_bonus",
         amount: 1000,
-        description: "Welcome bonus: 1000 KC",
+        description: "Welcome bonus: 1,000 KC",
         createdAt: new Date().toISOString(),
       });
+
+      // If referred, create bonus transactions
+      if (referrerUser) {
+        // New user gets extra 200 KC
+        await storage.createTransaction({
+          userId: user.id,
+          type: "referral",
+          amount: 200,
+          description: `Referral bonus: invited by ${referrerUser.displayName}`,
+          createdAt: new Date().toISOString(),
+        });
+        // Referrer gets 500 KC
+        await storage.updateUserBalance(referrerUser.id, 500);
+        await storage.createTransaction({
+          userId: referrerUser.id,
+          type: "referral",
+          amount: 500,
+          description: `Referral reward: ${displayName} joined using your link`,
+          createdAt: new Date().toISOString(),
+        });
+      }
 
       await createSession(res, user.id, !!rememberMe);
       const { password: _, ...safeUser } = user;
       res.json(safeUser);
     } catch (err) {
+      console.error("Registration error:", err);
       res.status(500).json({ error: "Registration failed" });
     }
   });
@@ -293,6 +446,25 @@ export async function registerRoutes(
     }
     const { password: _, ...safeUser } = user;
     res.json(safeUser);
+  });
+
+  // ═══════════════════════════════════════════
+  // REFERRAL ROUTES
+  // ═══════════════════════════════════════════
+
+  app.get("/api/referral", async (req, res) => {
+    const userId = await getCurrentUserId(req);
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+    const user = await storage.getUser(userId);
+    if (!user) return res.status(401).json({ error: "User not found" });
+
+    // Generate referral code if user doesn't have one yet
+    if (!user.referralCode) {
+      const code = user.username.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) + "-" + randomBytes(3).toString("hex").toUpperCase();
+      await storage.updateUserStats(user.id, { referralCode: code } as any);
+      return res.json({ referralCode: code });
+    }
+    res.json({ referralCode: user.referralCode });
   });
 
   // ═══════════════════════════════════════════
@@ -547,6 +719,9 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Multi-outcome and time-bracket markets require at least 2 options" });
       }
 
+      // Only allow featuring markets in approved categories
+      const isFeaturedAllowed = FEATURED_ALLOWED_CATEGORIES.includes(category);
+
       const market = await storage.createMarket({
         title,
         description,
@@ -557,7 +732,7 @@ export async function registerRoutes(
         noPrice: noPrice || 0.5,
         closesAt,
         createdAt: new Date().toISOString(),
-        featured: featured || false,
+        featured: featured && isFeaturedAllowed ? true : false,
         icon: icon || "📊",
         createdBy: adminUser.id,
         resolutionSource: resolutionSource || "manual",
@@ -597,6 +772,13 @@ export async function registerRoutes(
         } else {
           updates[key] = req.body[key];
         }
+      }
+    }
+    // Enforce featured restriction by category
+    if (updates.featured === true) {
+      const effectiveCategory = updates.category || market.category;
+      if (!FEATURED_ALLOWED_CATEGORIES.includes(effectiveCategory)) {
+        updates.featured = false;
       }
     }
 
