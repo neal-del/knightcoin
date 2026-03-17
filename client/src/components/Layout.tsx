@@ -179,7 +179,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </Link>
             )}
           </div>
-          <PerplexityAttribution />
+          {user ? (
+            <div className="px-4 py-3 text-[10px] text-muted-foreground/60 truncate">
+              {user.email || user.username}
+            </div>
+          ) : (
+            <PerplexityAttribution />
+          )}
         </div>
       </aside>
 

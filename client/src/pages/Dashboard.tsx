@@ -302,17 +302,32 @@ function ReferralButton() {
 
   if (!referralCode) {
     return (
-      <Button
-        variant="outline"
-        size="sm"
+      <button
         onClick={handleGenerate}
-        className="gap-1.5"
         disabled={loading}
         data-testid="button-generate-referral"
+        className="relative inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold text-white shadow-lg shadow-cyan-500/25 transition-all duration-300 hover:scale-105 hover:shadow-cyan-500/40 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+        style={{
+          background: "linear-gradient(135deg, #06b6d4, #8b5cf6, #ec4899)",
+          backgroundSize: "200% 200%",
+          animation: "invite-shimmer 3s ease-in-out infinite",
+        }}
       >
         <Share2 className="w-3.5 h-3.5" />
         {loading ? "Loading..." : "Invite Friends"}
-      </Button>
+        <span
+          className="absolute inset-0 rounded-lg opacity-0 hover:opacity-100 transition-opacity duration-300"
+          style={{
+            background: "linear-gradient(135deg, #22d3ee, #a78bfa, #f472b6)",
+          }}
+        />
+        <style>{`
+          @keyframes invite-shimmer {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+          }
+        `}</style>
+      </button>
     );
   }
 

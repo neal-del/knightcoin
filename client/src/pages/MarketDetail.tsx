@@ -130,7 +130,7 @@ export default function MarketDetail() {
   const noPercent = Math.round(market.noPrice * 100);
   const selectedOpt = options?.find((o) => o.id === selectedOption);
   const selectedPrice = isMulti ? (selectedOpt?.price || 0.5) : (position === "yes" ? market.yesPrice : market.noPrice);
-  const potentialPayout = amount ? (parseFloat(amount) / selectedPrice).toFixed(1) : "0";
+  const potentialPayout = amount ? (parseFloat(amount) / selectedPrice).toFixed(2) : "0";
   const isSchool = ["sports", "academic", "social", "campus", "admin"].includes(market.category);
 
   return (

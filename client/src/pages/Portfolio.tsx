@@ -29,13 +29,12 @@ export default function Portfolio() {
   const marketMap = new Map(markets?.map((m) => [m.id, m]) || []);
 
   // For multi-option markets, we need to resolve optionId → label
-  // Collect all unique multi-option market IDs from bets
+  // Detect multi-option bets by position: binary bets use "yes"/"no", multi-option bets use UUIDs
   const multiMarketIds = Array.from(
     new Set(
-      (bets || []).filter((b) => {
-        const m = marketMap.get(b.marketId);
-        return m && (m.marketType === "multi_outcome" || m.marketType === "time_bracket");
-      }).map((b) => b.marketId)
+      (bets || [])
+        .filter((b) => b.position !== "yes" && b.position !== "no")
+        .map((b) => b.marketId)
     )
   );
 
@@ -136,16 +135,15 @@ export default function Portfolio() {
                     </div>
                     <div className="flex items-center gap-4 shrink-0">
                       {(() => {
-                        const m = marketMap.get(bet.marketId);
-                        const isMulti = m && (m.marketType === "multi_outcome" || m.marketType === "time_bracket");
-                        const optionLabel = optionLabelMap.get(bet.position);
-                        if (isMulti && optionLabel) {
+                        const isBinary = bet.position === "yes" || bet.position === "no";
+                        if (!isBinary) {
+                          const optionLabel = optionLabelMap.get(bet.position);
                           return (
                             <Badge
                               className="text-[10px] px-2 py-0.5 font-semibold bg-violet-500/10 text-violet-400 border-violet-500/20 max-w-[140px] truncate"
                               variant="outline"
                             >
-                              {optionLabel}
+                              {optionLabel || "Loading..."}
                             </Badge>
                           );
                         }
