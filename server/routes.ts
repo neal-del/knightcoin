@@ -403,10 +403,13 @@ export async function registerRoutes(
     }
   });
 
-  // Admin login (by email)
+  // Admin login (by email) — admin accounts must use non-menloschool.org emails
   app.post("/api/auth/admin-login", async (req, res) => {
     try {
       const { email, password, rememberMe } = req.body;
+      if (email && email.toLowerCase().endsWith("@menloschool.org")) {
+        return res.status(400).json({ error: "Admin accounts must use a personal (non-school) email" });
+      }
       const user = await storage.getUserByEmail(email);
       if (!user) {
         return res.status(401).json({ error: "Invalid credentials" });
@@ -882,6 +885,22 @@ export async function registerRoutes(
       }
     }
     res.json({ ok: true, usersAffected: count });
+  });
+
+  // --- Admin: Update Admin Email ---
+  app.post("/api/admin/update-email", requireAdmin, async (req, res) => {
+    const { newEmail } = req.body;
+    if (!newEmail) return res.status(400).json({ error: "newEmail is required" });
+    if (newEmail.toLowerCase().endsWith("@menloschool.org")) {
+      return res.status(400).json({ error: "Admin accounts must use a personal (non-school) email" });
+    }
+    const adminUser = (req as any).adminUser;
+    const existing = await storage.getUserByEmail(newEmail.toLowerCase());
+    if (existing && existing.id !== adminUser.id) {
+      return res.status(400).json({ error: "Email already in use" });
+    }
+    await storage.updateUserStats(adminUser.id, { email: newEmail.toLowerCase() });
+    res.json({ ok: true, email: newEmail.toLowerCase() });
   });
 
   // ═══════════════════════════════════════════

@@ -27,6 +27,10 @@ export default function AdminLogin() {
       toast({ title: "Fill in all fields", variant: "destructive" });
       return;
     }
+    if (email.toLowerCase().endsWith("@menloschool.org")) {
+      toast({ title: "Admin accounts use personal emails", description: "Use a non-school email address", variant: "destructive" });
+      return;
+    }
     setLoading(true);
     try {
       await adminLogin(email, password, rememberMe);
@@ -57,7 +61,7 @@ export default function AdminLogin() {
             <label className="text-xs text-muted-foreground mb-1.5 block">Email</label>
             <Input
               type="email"
-              placeholder="your.email@menloschool.org"
+              placeholder="your.personal@email.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="bg-card"
@@ -93,7 +97,7 @@ export default function AdminLogin() {
 
         <div className="mt-6 p-3 rounded-lg bg-muted/20 border border-border">
           <p className="text-[11px] text-muted-foreground text-center">
-            Sign in with your Menlo School admin email
+            Admin accounts use personal (non-school) emails
           </p>
         </div>
       </div>
