@@ -22,6 +22,13 @@ export interface IStorage {
   getLeaderboard(): Promise<User[]>;
   getAllUsers(): Promise<User[]>;
   getUserCount(): Promise<number>;
+  deleteUser(id: string): Promise<boolean>;
+
+  // Terminated emails (deleted accounts)
+  addTerminatedEmail(email: string, deletedBy: string): Promise<void>;
+  getTerminatedEmail(email: string): Promise<{ email: string; deletedBy: string; deletedAt: string } | undefined>;
+  removeTerminatedEmail(email: string): Promise<void>;
+  getAllTerminatedEmails(): Promise<{ email: string; deletedBy: string; deletedAt: string }[]>;
   
   // Markets
   getMarkets(): Promise<Market[]>;
@@ -70,6 +77,7 @@ export class MemStorage implements IStorage {
   private transactions: Map<string, Transaction>;
   private marketRequests: Map<string, MarketRequest>;
   private marketOptions: Map<string, MarketOption>;
+  private terminatedEmails: Map<string, { email: string; deletedBy: string; deletedAt: string }>;
 
   constructor() {
     this.users = new Map();
@@ -77,6 +85,7 @@ export class MemStorage implements IStorage {
     this.bets = new Map();
     this.transactions = new Map();
     this.marketRequests = new Map();
+    this.terminatedEmails = new Map();
     this.marketOptions = new Map();
     this.seedData();
   }
@@ -490,6 +499,30 @@ export class MemStorage implements IStorage {
 
   async getUserCount(): Promise<number> {
     return this.users.size;
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    return this.users.delete(id);
+  }
+
+  async addTerminatedEmail(email: string, deletedBy: string): Promise<void> {
+    this.terminatedEmails.set(email.toLowerCase(), {
+      email: email.toLowerCase(),
+      deletedBy,
+      deletedAt: new Date().toISOString(),
+    });
+  }
+
+  async getTerminatedEmail(email: string) {
+    return this.terminatedEmails.get(email.toLowerCase());
+  }
+
+  async removeTerminatedEmail(email: string): Promise<void> {
+    this.terminatedEmails.delete(email.toLowerCase());
+  }
+
+  async getAllTerminatedEmails() {
+    return Array.from(this.terminatedEmails.values());
   }
 
   // Markets

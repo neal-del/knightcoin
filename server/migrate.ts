@@ -157,6 +157,15 @@ export async function runMigrations() {
       WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'allenwsf@gmail.com');
     `);
 
+    // Terminated emails table — tracks deleted accounts
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS terminated_emails (
+        email TEXT PRIMARY KEY,
+        deleted_by TEXT NOT NULL,
+        deleted_at TEXT NOT NULL
+      );
+    `);
+
     // ── Neal admin email migration ──
     // Move admin account from school email to personal email
     await pool.query(`

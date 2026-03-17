@@ -5,6 +5,7 @@ import * as schema from "@shared/schema";
 const { Pool } = pg;
 
 let db: ReturnType<typeof drizzle<typeof schema>> | null = null;
+let pool: InstanceType<typeof Pool> | null = null;
 
 // Railway provides several URL variables — try them in order of preference
 const dbUrl =
@@ -15,7 +16,7 @@ const dbUrl =
 
 if (dbUrl) {
   try {
-    const pool = new Pool({
+    pool = new Pool({
       connectionString: dbUrl,
       ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
     });
@@ -25,6 +26,7 @@ if (dbUrl) {
     console.error("[db] Failed to create PostgreSQL pool:", err);
     console.warn("[db] Falling back to in-memory storage.");
     db = null;
+    pool = null;
   }
 } else {
   console.warn(
@@ -32,4 +34,4 @@ if (dbUrl) {
   );
 }
 
-export { db };
+export { db, pool };

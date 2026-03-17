@@ -47,6 +47,35 @@ async function sendVerificationEmail(email: string, code: string): Promise<boole
   }
 }
 
+async function sendPermissionRequestEmail(terminatedEmail: string): Promise<boolean> {
+  if (!resend) {
+    console.log(`[email] No RESEND_API_KEY set. Re-registration request for ${terminatedEmail} (would email neal@rgoel.com)`);
+    return true;
+  }
+  try {
+    await resend.emails.send({
+      from: 'The Knight Market <onboarding@resend.dev>',
+      to: ['neal@rgoel.com'],
+      subject: `Re-registration Request: ${terminatedEmail}`,
+      html: `
+        <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #06b6d4; margin-bottom: 8px;">The Knight Market</h2>
+          <p style="color: #333; font-size: 14px;">A previously terminated account is requesting to re-register:</p>
+          <div style="background: #f4f4f5; border-radius: 8px; padding: 16px; margin: 16px 0;">
+            <p style="font-size: 16px; font-weight: bold; color: #111; margin: 0;">${terminatedEmail}</p>
+          </div>
+          <p style="color: #666; font-size: 13px;">To allow this email to re-register, go to the Admin panel &gt; Users and remove it from the terminated list.</p>
+          <p style="color: #999; font-size: 12px;">This is an automated message from The Knight Market.</p>
+        </div>
+      `,
+    });
+    return true;
+  } catch (err) {
+    console.error('[email] Failed to send permission request email:', err);
+    return false;
+  }
+}
+
 // Categories allowed to be featured
 const FEATURED_ALLOWED_CATEGORIES = ['campus', 'social', 'sports', 'pro-sports'];
 
@@ -251,6 +280,17 @@ export async function registerRoutes(
       if (!email.toLowerCase().endsWith("@menloschool.org")) {
         return res.status(400).json({ error: "Only @menloschool.org emails are allowed" });
       }
+      // Check if email was terminated
+      const terminated = await storage.getTerminatedEmail(email.toLowerCase());
+      if (terminated) {
+        // Send a permission request email to the head admin
+        try {
+          await sendPermissionRequestEmail(email);
+        } catch { /* best effort */ }
+        return res.status(403).json({
+          error: "This email was previously terminated. A re-registration request has been sent to the admin for review.",
+        });
+      }
       // Check if email already registered
       const existing = await storage.getUserByEmail(email.toLowerCase());
       if (existing) {
@@ -293,6 +333,15 @@ export async function registerRoutes(
       }
       if (!email.toLowerCase().endsWith("@menloschool.org")) {
         return res.status(400).json({ error: "Only @menloschool.org emails are allowed" });
+      }
+
+      // Check if email was terminated (double-check in register too)
+      const terminatedCheck = await storage.getTerminatedEmail(email.toLowerCase());
+      if (terminatedCheck) {
+        try { await sendPermissionRequestEmail(email); } catch { /* best effort */ }
+        return res.status(403).json({
+          error: "This email was previously terminated. A re-registration request has been sent to the admin for review.",
+        });
       }
 
       // Verify the code
@@ -901,6 +950,38 @@ export async function registerRoutes(
     }
     await storage.updateUserStats(adminUser.id, { email: newEmail.toLowerCase() });
     res.json({ ok: true, email: newEmail.toLowerCase() });
+  });
+
+  // --- Admin: Delete User Account ---
+  app.post("/api/admin/users/:id/delete", requireAdmin, async (req, res) => {
+    const userId = req.params.id;
+    const adminUser = (req as any).adminUser;
+
+    const targetUser = await storage.getUser(userId);
+    if (!targetUser) return res.status(404).json({ error: "User not found" });
+    if (targetUser.role === "admin") {
+      return res.status(400).json({ error: "Cannot delete admin accounts" });
+    }
+
+    // Store terminated email so they can't re-register without approval
+    if (targetUser.email) {
+      await storage.addTerminatedEmail(targetUser.email, adminUser.id);
+    }
+
+    await storage.deleteUser(userId);
+    res.json({ ok: true, deletedEmail: targetUser.email });
+  });
+
+  // --- Admin: List Terminated Emails ---
+  app.get("/api/admin/terminated-emails", requireAdmin, async (_req, res) => {
+    const emails = await storage.getAllTerminatedEmails();
+    res.json(emails);
+  });
+
+  // --- Admin: Re-allow a terminated email ---
+  app.post("/api/admin/terminated-emails/:email/allow", requireAdmin, async (req, res) => {
+    await storage.removeTerminatedEmail(decodeURIComponent(req.params.email));
+    res.json({ ok: true });
   });
 
   // ═══════════════════════════════════════════

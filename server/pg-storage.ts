@@ -1,5 +1,5 @@
 import { eq, desc, and, or, sql, gt } from "drizzle-orm";
-import { db } from "./db";
+import { db, pool } from "./db";
 import {
   users,
   markets,
@@ -124,6 +124,42 @@ export class PgStorage implements IStorage {
       .select({ count: sql<number>`count(*)::int` })
       .from(users);
     return result.count;
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    const result = await getDb().delete(users).where(eq(users.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // Terminated emails — stored in a dedicated table
+  async addTerminatedEmail(email: string, deletedBy: string): Promise<void> {
+    if (!pool) return;
+    await pool.query(
+      "INSERT INTO terminated_emails (email, deleted_by, deleted_at) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING",
+      [email.toLowerCase(), deletedBy, new Date().toISOString()]
+    );
+  }
+
+  async getTerminatedEmail(email: string) {
+    if (!pool) return undefined;
+    const result = await pool.query(
+      "SELECT email, deleted_by as \"deletedBy\", deleted_at as \"deletedAt\" FROM terminated_emails WHERE email = $1",
+      [email.toLowerCase()]
+    );
+    return result.rows[0] || undefined;
+  }
+
+  async removeTerminatedEmail(email: string): Promise<void> {
+    if (!pool) return;
+    await pool.query("DELETE FROM terminated_emails WHERE email = $1", [email.toLowerCase()]);
+  }
+
+  async getAllTerminatedEmails() {
+    if (!pool) return [];
+    const result = await pool.query(
+      "SELECT email, deleted_by as \"deletedBy\", deleted_at as \"deletedAt\" FROM terminated_emails ORDER BY deleted_at DESC"
+    );
+    return result.rows;
   }
 
   // Markets

@@ -78,11 +78,11 @@ function MultiOptionResolver({ market, resolving, setResolving }: {
   const hasMore = options.length > 5;
 
   return (
-    <div className="space-y-3 w-full min-w-[200px]">
+    <div className="space-y-3 w-full">
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
         Pick the winning option
       </div>
-      <div className="space-y-1.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
         {visibleOptions.map((opt) => (
           <button
             key={opt.id}
@@ -125,7 +125,7 @@ function MultiOptionResolver({ market, resolving, setResolving }: {
         size="sm"
         onClick={resolveWithWinner}
         disabled={!selectedWinner || resolving === market.id}
-        className="w-full gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+        className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:max-w-xs"
         data-testid={`button-resolve-winner-${market.id}`}
       >
         <Trophy className="w-3.5 h-3.5" />
@@ -237,9 +237,9 @@ export default function AdminResolve() {
                     className={`rounded-xl border bg-card p-5 ${isHighlighted ? "border-primary/50 bg-primary/5" : "border-border"}`}
                     data-testid={`resolve-market-${market.id}`}
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-2">
+                    <div className={isMulti ? "space-y-4" : "flex items-start justify-between gap-4"}>
+                      <div className={isMulti ? "" : "flex-1 min-w-0"}>
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
                           <span className="text-lg">{market.icon}</span>
                           <h3 className="text-sm font-semibold text-foreground">{market.title}</h3>
                           {isMulti && (
@@ -250,7 +250,7 @@ export default function AdminResolve() {
                         </div>
                         <p className="text-xs text-muted-foreground mb-3">{market.description}</p>
 
-                        <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+                        <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
                           <span>{CATEGORY_LABELS[market.category] || market.category}</span>
                           <span className="flex items-center gap-1">
                             <TrendingUp className="w-3 h-3" /> {formatKC(market.volume)} KC
@@ -281,11 +281,13 @@ export default function AdminResolve() {
 
                       {/* Resolution controls — different for binary vs multi */}
                       {isMulti ? (
-                        <MultiOptionResolver
-                          market={market}
-                          resolving={resolving}
-                          setResolving={setResolving}
-                        />
+                        <div className="border-t border-border pt-4">
+                          <MultiOptionResolver
+                            market={market}
+                            resolving={resolving}
+                            setResolving={setResolving}
+                          />
+                        </div>
                       ) : (
                         <div className="flex flex-col gap-2 shrink-0">
                           <div className="grid grid-cols-2 gap-4 mb-2">
