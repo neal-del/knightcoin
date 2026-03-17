@@ -491,15 +491,23 @@ export default function AdminCreateMarket() {
         )}
 
         {/* Featured toggle */}
-        <label className="flex items-center gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={featured}
-            onChange={(e) => setFeatured(e.target.checked)}
-            className="rounded border-border"
-          />
-          <span className="text-sm text-foreground">Feature this market on the homepage</span>
-        </label>
+        <div className="space-y-1.5">
+          <label className={`flex items-center gap-3 cursor-pointer ${!["campus", "social", "sports", "pro-sports"].includes(category) ? "opacity-50" : ""}`}>
+            <input
+              type="checkbox"
+              checked={featured}
+              onChange={(e) => setFeatured(e.target.checked)}
+              className="rounded border-border"
+              disabled={!["campus", "social", "sports", "pro-sports"].includes(category)}
+            />
+            <span className="text-sm text-foreground">Feature this market on the homepage</span>
+          </label>
+          {!["campus", "social", "sports", "pro-sports"].includes(category) && (
+            <p className="text-[11px] text-muted-foreground pl-7">
+              Only School Sports, Campus, Social, and Pro Sports markets can be featured.
+            </p>
+          )}
+        </div>
 
         <Button type="submit" className="w-full gap-2" disabled={loading} data-testid="button-create-market-submit">
           {loading ? "Creating..." : "Create Market"}

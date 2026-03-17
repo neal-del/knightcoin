@@ -14,6 +14,8 @@ interface AuthUser {
   totalBets: number;
   correctPredictions: number;
   lastDailyBonus: string | null;
+  referralCode: string | null;
+  emailVerified: boolean;
 }
 
 interface AuthContextType {
@@ -22,7 +24,8 @@ interface AuthContextType {
   loading: boolean;
   login: (username: string, password: string, rememberMe?: boolean) => Promise<void>;
   adminLogin: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
-  register: (username: string, password: string, displayName: string, rememberMe?: boolean) => Promise<void>;
+  register: (email: string, code: string, username: string, password: string, displayName: string, rememberMe?: boolean, referralCode?: string) => Promise<void>;
+  sendVerification: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -34,6 +37,7 @@ const AuthContext = createContext<AuthContextType>({
   login: async () => {},
   adminLogin: async () => {},
   register: async () => {},
+  sendVerification: async () => {},
   logout: async () => {},
   refreshUser: async () => {},
 });
@@ -73,8 +77,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(data);
   }, []);
 
-  const register = useCallback(async (username: string, password: string, displayName: string, rememberMe?: boolean) => {
-    const res = await apiRequest("POST", "/api/auth/register", { username, password, displayName, rememberMe });
+  const sendVerification = useCallback(async (email: string) => {
+    const res = await apiRequest("POST", "/api/auth/send-verification", { email });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || "Failed to send verification");
+  }, []);
+
+  const register = useCallback(async (email: string, code: string, username: string, password: string, displayName: string, rememberMe?: boolean, referralCode?: string) => {
+    const res = await apiRequest("POST", "/api/auth/register", { email, code, username, password, displayName, rememberMe, referralCode });
     const data = await res.json();
     setUser(data);
   }, []);
@@ -98,7 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isAdmin = user?.role === "admin";
 
   return (
-    <AuthContext.Provider value={{ user, isAdmin, loading, login, adminLogin, register, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, isAdmin, loading, login, adminLogin, register, sendVerification, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
