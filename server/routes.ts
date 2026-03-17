@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage";
+import type { Market, MarketOption } from "@shared/schema";
 import { initBlockchain, getBlockchainConfig, getOnChainBalance, verifyTransaction, isBlockchainEnabled } from "./blockchain";
 import { Resend } from "resend";
 
@@ -686,7 +687,67 @@ export async function registerRoutes(
 
   app.get("/api/leaderboard", async (_req, res) => {
     const leaderboard = await storage.getLeaderboard();
-    const safe = leaderboard.map(({ password: _, ...u }) => u);
+
+    // Compute net worth: balance + current value of unsettled bets
+    const allBets = await storage.getAllBets();
+    const unsettledBets = allBets.filter((b) => !b.settled);
+
+    // Build a set of market IDs we need prices for
+    const marketIds = [...new Set(unsettledBets.map((b) => b.marketId))];
+    const marketMap = new Map<string, Market>();
+    const optionMap = new Map<string, MarketOption>();
+
+    // Fetch all markets and their options in parallel
+    await Promise.all(
+      marketIds.map(async (mid) => {
+        const market = await storage.getMarket(mid);
+        if (market) {
+          marketMap.set(mid, market);
+          // For multi-option markets, fetch options
+          if (market.marketType !== "binary") {
+            const opts = await storage.getMarketOptions(mid);
+            for (const opt of opts) {
+              optionMap.set(opt.id, opt);
+            }
+          }
+        }
+      })
+    );
+
+    // Calculate portfolio value per user
+    const portfolioByUser = new Map<string, number>();
+    for (const bet of unsettledBets) {
+      const market = marketMap.get(bet.marketId);
+      if (!market) continue;
+
+      const shares = bet.amount / bet.price; // number of shares bought
+      let currentPrice: number;
+
+      if (bet.position === "yes" || bet.position === "no") {
+        // Binary bet
+        currentPrice = bet.position === "yes" ? market.yesPrice : market.noPrice;
+      } else {
+        // Multi-option bet — position stores the optionId
+        const option = optionMap.get(bet.position);
+        currentPrice = option ? option.price : 0;
+      }
+
+      const currentValue = shares * currentPrice;
+      portfolioByUser.set(
+        bet.userId,
+        (portfolioByUser.get(bet.userId) || 0) + currentValue
+      );
+    }
+
+    // Attach netWorth to each user and re-sort
+    const safe = leaderboard
+      .map(({ password: _, ...u }) => ({
+        ...u,
+        portfolioValue: Math.round((portfolioByUser.get(u.id) || 0) * 100) / 100,
+        netWorth: Math.round((u.balance + (portfolioByUser.get(u.id) || 0)) * 100) / 100,
+      }))
+      .sort((a, b) => b.netWorth - a.netWorth);
+
     res.json(safe);
   });
 

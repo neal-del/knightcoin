@@ -20,6 +20,8 @@ interface LeaderboardUser {
   totalWinnings: number;
   totalBets: number;
   correctPredictions: number;
+  portfolioValue: number;
+  netWorth: number;
 }
 
 function useDailyCooldown(lastDailyBonus: string | null | undefined) {
@@ -229,7 +231,7 @@ export default function Dashboard() {
                     {u.displayName}{isCurrentUser ? " (you)" : ""}
                   </span>
                   <span className="text-sm font-bold text-primary tabular-nums shrink-0">
-                    {formatKC(u.balance)} KC
+                    {formatKC(u.netWorth)} KC
                   </span>
                 </div>
               );
@@ -252,7 +254,7 @@ export default function Dashboard() {
                     {user.displayName || user.username} (you)
                   </span>
                   <span className="text-sm font-bold text-primary tabular-nums shrink-0">
-                    {formatKC(user.balance)} KC
+                    {formatKC(leaderboard.find((u) => u.id === user.id)?.netWorth ?? user.balance)} KC
                   </span>
                 </div>
               </>

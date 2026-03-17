@@ -11,6 +11,8 @@ interface LeaderboardUser {
   totalWinnings: number;
   totalBets: number;
   correctPredictions: number;
+  portfolioValue: number;
+  netWorth: number;
 }
 
 const RANK_STYLES: Record<number, string> = {
@@ -31,7 +33,7 @@ export default function Leaderboard() {
           <Trophy className="w-5 h-5 text-primary" />
           <h1 className="text-xl font-bold text-foreground">Leaderboard</h1>
         </div>
-        <p className="text-sm text-muted-foreground">Top KnightCoin holders at Menlo School</p>
+        <p className="text-sm text-muted-foreground">Top KnightCoin traders at Menlo School — ranked by net worth (balance + portfolio)</p>
       </div>
 
       {/* Top 3 podium */}
@@ -54,7 +56,7 @@ export default function Leaderboard() {
                 </div>
                 <div className="text-sm font-semibold text-foreground truncate">{u.displayName}</div>
                 <div className="text-lg font-bold text-primary tabular-nums mt-1">
-                  {formatKC(u.balance)} KC
+                  {formatKC(u.netWorth)} KC
                 </div>
                 <div className="text-[10px] text-muted-foreground mt-1">
                   {u.totalBets} bets · {u.correctPredictions} correct
@@ -75,7 +77,7 @@ export default function Leaderboard() {
           <div className="grid grid-cols-[3rem_1fr_auto_auto_auto] gap-4 px-4 py-2.5 bg-muted/30 text-[10px] uppercase tracking-widest text-muted-foreground">
             <span>Rank</span>
             <span>Trader</span>
-            <span className="text-right">Balance</span>
+            <span className="text-right">Net Worth</span>
             <span className="text-right hidden md:block">Bets</span>
             <span className="text-right hidden md:block">Win Rate</span>
           </div>
@@ -104,7 +106,7 @@ export default function Leaderboard() {
                   <span className="text-sm font-medium text-foreground truncate">{u.displayName}</span>
                 </div>
                 <span className="text-sm font-bold text-primary tabular-nums text-right">
-                  {formatKC(u.balance)} KC
+                  {formatKC(u.netWorth)} KC
                 </span>
                 <span className="text-xs text-muted-foreground tabular-nums text-right hidden md:block">
                   {u.totalBets}
