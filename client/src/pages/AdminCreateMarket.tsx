@@ -5,7 +5,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, PlusCircle, Trash2 } from "lucide-react";
+import { ArrowLeft, PlusCircle, Trash2, ClipboardPaste } from "lucide-react";
 
 const CATEGORIES = [
   { value: "sports", label: "School Sports", icon: "🏀" },
@@ -51,6 +51,68 @@ export default function AdminCreateMarket() {
   const [ticker, setTicker] = useState("");
   const [targetPrice, setTargetPrice] = useState("");
   const [condition, setCondition] = useState("above");
+
+  const [pasteMode, setPasteMode] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+
+  /** Parse pasted text into individual options.
+   *  Supports: numbered lists ("1. Foo"), CSV, TSV, newline-separated, semicolons */
+  const parsePastedOptions = (text: string): string[] => {
+    const trimmed = text.trim();
+    if (!trimmed) return [];
+
+    // Split by newlines first
+    const lines = trimmed.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+    // If multiple lines, treat each line as an option (strip numbering)
+    if (lines.length > 1) {
+      return lines.map((line) =>
+        // Strip leading numbering like "1. ", "1) ", "1- ", "- ", "• "
+        line.replace(/^(?:\d+[.)\-]\s*|[-•*]\s+)/, "").trim()
+      ).filter(Boolean);
+    }
+
+    // Single line — try tab-separated
+    if (lines[0].includes("\t")) {
+      return lines[0].split("\t").map((s) => s.trim()).filter(Boolean);
+    }
+
+    // Single line — try semicolons
+    if (lines[0].includes(";")) {
+      return lines[0].split(";").map((s) => s.trim()).filter(Boolean);
+    }
+
+    // Single line — try comma-separated
+    if (lines[0].includes(",")) {
+      return lines[0].split(",").map((s) => s.trim()).filter(Boolean);
+    }
+
+    // Fall back to the whole line as a single option
+    return [lines[0]];
+  };
+
+  const applyPastedOptions = () => {
+    const parsed = parsePastedOptions(pasteText);
+    if (parsed.length === 0) return;
+    // Merge: replace empty slots first, then append
+    const merged = [...options];
+    let insertIdx = 0;
+    for (const opt of parsed) {
+      // Find next empty slot
+      while (insertIdx < merged.length && merged[insertIdx].trim()) {
+        insertIdx++;
+      }
+      if (insertIdx < merged.length) {
+        merged[insertIdx] = opt;
+      } else {
+        merged.push(opt);
+      }
+      insertIdx++;
+    }
+    setOptions(merged);
+    setPasteText("");
+    setPasteMode(false);
+  };
 
   if (!isAdmin) return null;
 
@@ -169,11 +231,62 @@ export default function AdminCreateMarket() {
         {/* Options for non-binary markets */}
         {marketType !== "binary" && (
           <div className="space-y-3">
-            <label className="text-xs text-muted-foreground block">
-              {marketType === "time_bracket" ? "Time Brackets" : "Options"}
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-muted-foreground block">
+                {marketType === "time_bracket" ? "Time Brackets" : "Options"}
+              </label>
+              <button
+                type="button"
+                onClick={() => setPasteMode(!pasteMode)}
+                className={`inline-flex items-center gap-1.5 text-xs transition-colors ${
+                  pasteMode
+                    ? "text-primary font-medium"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                data-testid="button-toggle-paste"
+              >
+                <ClipboardPaste className="w-3.5 h-3.5" />
+                {pasteMode ? "Back to manual" : "Paste list"}
+              </button>
+            </div>
+
+            {/* Smart paste textarea */}
+            {pasteMode && (
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2.5">
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  Paste a list of options. Supports comma-separated, tab-separated, numbered lists, semicolons, or one per line.
+                </p>
+                <textarea
+                  placeholder={"e.g.\n1. Golden State Warriors\n2. Boston Celtics\n3. Denver Nuggets\n\nor: Warriors, Celtics, Nuggets"}
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  className="w-full min-h-[100px] rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-y font-mono"
+                  data-testid="textarea-paste-options"
+                />
+                {pasteText.trim() && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-muted-foreground">
+                      {parsePastedOptions(pasteText).length} option{parsePastedOptions(pasteText).length !== 1 ? "s" : ""} detected
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={applyPastedOptions}
+                      className="h-7 text-xs gap-1.5"
+                      data-testid="button-apply-paste"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      Apply options
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Individual option inputs */}
             {options.map((opt, i) => (
               <div key={i} className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground w-5 text-right tabular-nums shrink-0">{i + 1}</span>
                 <Input
                   placeholder={marketType === "time_bracket" ? `e.g. Before March 2026` : `Option ${i + 1}`}
                   value={opt}
