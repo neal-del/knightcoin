@@ -23,7 +23,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PerplexityAttribution } from "@/components/PerplexityAttribution";
-import { useState } from "react";
+import { queryClient } from "@/lib/queryClient";
+import { useState, useCallback } from "react";
+import { RefreshCw } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -48,6 +50,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, isAdmin, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await queryClient.invalidateQueries();
+    // Small delay so spinner is visible
+    setTimeout(() => setRefreshing(false), 600);
+  }, []);
 
   const isAdminPage = location.startsWith("/admin");
 
@@ -131,14 +141,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         <div className="p-3 border-t border-border space-y-2">
           <div className="flex items-center justify-between">
-            <button
-              onClick={toggleTheme}
-              className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-              data-testid="button-theme-toggle"
-              aria-label="Toggle theme"
-            >
-              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                data-testid="button-theme-toggle"
+                aria-label="Toggle theme"
+              >
+                {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+              <button
+                onClick={handleRefresh}
+                className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                data-testid="button-refresh"
+                aria-label="Refresh data"
+                disabled={refreshing}
+              >
+                <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+              </button>
+            </div>
             {user ? (
               <button
                 onClick={logout}
@@ -166,12 +187,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <KnightCoinLogo size={24} />
             <span className="text-sm font-bold text-foreground">KnightCoin</span>
           </Link>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             {user && (
-              <span className="text-xs font-bold text-primary tabular-nums" data-testid="text-mobile-balance">
+              <span className="text-xs font-bold text-primary tabular-nums mr-1" data-testid="text-mobile-balance">
                 {user.balance.toLocaleString()} KC
               </span>
             )}
+            <button
+              onClick={handleRefresh}
+              className="p-2 text-muted-foreground"
+              data-testid="button-mobile-refresh"
+              aria-label="Refresh data"
+              disabled={refreshing}
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+            </button>
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
               className="p-2 text-muted-foreground"
