@@ -13,13 +13,131 @@ import {
   XCircle,
   Clock,
   TrendingUp,
-  AlertTriangle,
   Undo2,
   Zap,
+  Trophy,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
-import type { Market } from "@shared/schema";
+import type { Market, MarketOption } from "@shared/schema";
 import { CATEGORY_LABELS } from "@/components/MarketCard";
 import { useState } from "react";
+
+/** Sub-component: resolution controls for a single multi-option market */
+function MultiOptionResolver({ market, resolving, setResolving }: {
+  market: Market;
+  resolving: string | null;
+  setResolving: (id: string | null) => void;
+}) {
+  const { toast } = useToast();
+  const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  const { data: options, isLoading } = useQuery<MarketOption[]>({
+    queryKey: ["/api/markets", market.id, "options"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/markets/${market.id}/options`);
+      return res.json();
+    },
+  });
+
+  const resolveWithWinner = async () => {
+    if (!selectedWinner) return;
+    setResolving(market.id);
+    try {
+      const res = await apiRequest("POST", `/api/admin/markets/${market.id}/resolve-option`, {
+        winnerOptionId: selectedWinner,
+      });
+      const data = await res.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/markets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leaderboard"] });
+      const winnerLabel = options?.find((o) => o.id === selectedWinner)?.label || "selected option";
+      toast({
+        title: `Resolved: ${winnerLabel} wins`,
+        description: `${data.settledBets} bets settled and paid out`,
+      });
+      setSelectedWinner(null);
+    } catch {
+      toast({ title: "Resolution failed", variant: "destructive" });
+    } finally {
+      setResolving(null);
+    }
+  };
+
+  if (isLoading) {
+    return <Skeleton className="h-24 rounded-lg" />;
+  }
+
+  if (!options || options.length === 0) {
+    return <p className="text-xs text-muted-foreground">No options found for this market.</p>;
+  }
+
+  const visibleOptions = expanded ? options : options.slice(0, 5);
+  const hasMore = options.length > 5;
+
+  return (
+    <div className="space-y-3 w-full min-w-[200px]">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+        Pick the winning option
+      </div>
+      <div className="space-y-1.5">
+        {visibleOptions.map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => setSelectedWinner(opt.id === selectedWinner ? null : opt.id)}
+            disabled={resolving === market.id}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-left transition-all text-xs ${
+              opt.id === selectedWinner
+                ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/30"
+                : "border-border bg-card/50 text-foreground hover:border-primary/30 hover:bg-primary/5"
+            }`}
+            data-testid={`option-resolve-${opt.id}`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              {opt.id === selectedWinner && <Trophy className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+              <span className="truncate font-medium">{opt.label}</span>
+            </div>
+            <span className="text-[10px] tabular-nums text-muted-foreground shrink-0 ml-2">
+              {Math.round(opt.price * 100)}¢
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {hasMore && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="text-xs text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
+        >
+          {expanded ? (
+            <><ChevronUp className="w-3 h-3" /> Show fewer</>
+          ) : (
+            <><ChevronDown className="w-3 h-3" /> Show all {options.length} options</>
+          )}
+        </button>
+      )}
+
+      <Button
+        size="sm"
+        onClick={resolveWithWinner}
+        disabled={!selectedWinner || resolving === market.id}
+        className="w-full gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+        data-testid={`button-resolve-winner-${market.id}`}
+      >
+        <Trophy className="w-3.5 h-3.5" />
+        {resolving === market.id
+          ? "Resolving..."
+          : selectedWinner
+            ? `Resolve: ${options.find((o) => o.id === selectedWinner)?.label}`
+            : "Select a winner above"}
+      </Button>
+    </div>
+  );
+}
 
 export default function AdminResolve() {
   const { isAdmin } = useAuth();
@@ -87,8 +205,7 @@ export default function AdminResolve() {
         </Link>
         <h1 className="text-xl font-bold text-foreground">Resolve Markets</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Resolve markets to settle bets and distribute payouts. School markets require manual resolution.
-          Macro markets show their auto-resolution config.
+          Resolve markets to settle bets and distribute payouts. For multi-option markets, select the winning option.
         </p>
       </div>
 
@@ -112,6 +229,7 @@ export default function AdminResolve() {
                 } catch { }
 
                 const isHighlighted = market.id === focusId;
+                const isMulti = market.marketType === "multi_outcome" || market.marketType === "time_bracket";
 
                 return (
                   <div
@@ -124,6 +242,11 @@ export default function AdminResolve() {
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-lg">{market.icon}</span>
                           <h3 className="text-sm font-semibold text-foreground">{market.title}</h3>
+                          {isMulti && (
+                            <Badge className="text-[9px] px-1.5 py-0 bg-violet-500/10 text-violet-400 border-violet-500/20" variant="outline">
+                              {market.marketType === "time_bracket" ? "Time Bracket" : "Multi-Option"}
+                            </Badge>
+                          )}
                         </div>
                         <p className="text-xs text-muted-foreground mb-3">{market.description}</p>
 
@@ -156,40 +279,48 @@ export default function AdminResolve() {
                         )}
                       </div>
 
-                      {/* Resolution buttons */}
-                      <div className="flex flex-col gap-2 shrink-0">
-                        <div className="grid grid-cols-2 gap-4 mb-2">
-                          <div className="text-center">
-                            <div className="text-[10px] text-muted-foreground mb-0.5">YES</div>
-                            <div className="text-sm font-bold text-emerald-400 tabular-nums">{Math.round(market.yesPrice * 100)}¢</div>
+                      {/* Resolution controls — different for binary vs multi */}
+                      {isMulti ? (
+                        <MultiOptionResolver
+                          market={market}
+                          resolving={resolving}
+                          setResolving={setResolving}
+                        />
+                      ) : (
+                        <div className="flex flex-col gap-2 shrink-0">
+                          <div className="grid grid-cols-2 gap-4 mb-2">
+                            <div className="text-center">
+                              <div className="text-[10px] text-muted-foreground mb-0.5">YES</div>
+                              <div className="text-sm font-bold text-emerald-400 tabular-nums">{Math.round(market.yesPrice * 100)}¢</div>
+                            </div>
+                            <div className="text-center">
+                              <div className="text-[10px] text-muted-foreground mb-0.5">NO</div>
+                              <div className="text-sm font-bold text-rose-400 tabular-nums">{Math.round(market.noPrice * 100)}¢</div>
+                            </div>
                           </div>
-                          <div className="text-center">
-                            <div className="text-[10px] text-muted-foreground mb-0.5">NO</div>
-                            <div className="text-sm font-bold text-rose-400 tabular-nums">{Math.round(market.noPrice * 100)}¢</div>
-                          </div>
+                          <Button
+                            size="sm"
+                            onClick={() => resolveMarket(market.id, true)}
+                            disabled={resolving === market.id}
+                            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                            data-testid={`button-resolve-yes-${market.id}`}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Resolve YES
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => resolveMarket(market.id, false)}
+                            disabled={resolving === market.id}
+                            className="gap-1.5 border-rose-500/30 text-rose-400 hover:bg-rose-500/10 text-xs"
+                            data-testid={`button-resolve-no-${market.id}`}
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            Resolve NO
+                          </Button>
                         </div>
-                        <Button
-                          size="sm"
-                          onClick={() => resolveMarket(market.id, true)}
-                          disabled={resolving === market.id}
-                          className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-                          data-testid={`button-resolve-yes-${market.id}`}
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          Resolve YES
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => resolveMarket(market.id, false)}
-                          disabled={resolving === market.id}
-                          className="gap-1.5 border-rose-500/30 text-rose-400 hover:bg-rose-500/10 text-xs"
-                          data-testid={`button-resolve-no-${market.id}`}
-                        >
-                          <XCircle className="w-3.5 h-3.5" />
-                          Resolve NO
-                        </Button>
-                      </div>
+                      )}
                     </div>
                   </div>
                 );

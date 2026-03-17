@@ -313,7 +313,7 @@ export default function AdminCreateMarket() {
             <div className="flex items-center gap-2 text-[10px] text-muted-foreground uppercase tracking-wider">
               <span className="w-5 shrink-0" />
               <span className="flex-1">Label</span>
-              <span className="w-20 text-center">Price (0-1)</span>
+              <span className="w-24 text-center">Starting Price</span>
               {options.length > 2 && <span className="w-10" />}
             </div>
 
@@ -333,18 +333,18 @@ export default function AdminCreateMarket() {
                   data-testid={`input-option-${i}`}
                 />
                 <Input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  max="0.99"
+                  type="text"
+                  inputMode="decimal"
                   placeholder={`${(1 / options.length).toFixed(2)}`}
                   value={opt.price}
                   onChange={(e) => {
+                    // Allow only valid decimal input
+                    const val = e.target.value.replace(/[^0-9.]/g, "");
                     const next = [...options];
-                    next[i] = { ...next[i], price: e.target.value };
+                    next[i] = { ...next[i], price: val };
                     setOptions(next);
                   }}
-                  className="bg-card w-20 tabular-nums text-center"
+                  className="bg-card w-24 tabular-nums text-center"
                   data-testid={`input-option-price-${i}`}
                 />
                 {options.length > 2 && (
