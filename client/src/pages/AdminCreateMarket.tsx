@@ -140,13 +140,15 @@ export default function AdminCreateMarket() {
         toast({ title: "Add at least 2 options for multi-outcome markets", variant: "destructive" });
         return;
       }
-      // Validate prices sum to ~1.0 if any custom prices set
-      const hasCustomPrices = validOptions.some((o) => o.price.trim());
-      if (hasCustomPrices) {
-        const priceSum = validOptions.reduce((sum, o) => sum + (parseFloat(o.price) || (1 / validOptions.length)), 0);
-        if (Math.abs(priceSum - 1) > 0.05) {
-          toast({ title: `Option prices should sum to 1.00 (currently ${priceSum.toFixed(2)})`, variant: "destructive" });
-          return;
+      // Validate prices sum to ~1.0 only for mutually exclusive markets
+      if (exclusiveMulti) {
+        const hasCustomPrices = validOptions.some((o) => o.price.trim());
+        if (hasCustomPrices) {
+          const priceSum = validOptions.reduce((sum, o) => sum + (parseFloat(o.price) || (1 / validOptions.length)), 0);
+          if (Math.abs(priceSum - 1) > 0.05) {
+            toast({ title: `Option prices should sum to 1.00 (currently ${priceSum.toFixed(2)})`, variant: "destructive" });
+            return;
+          }
         }
       }
     }
@@ -400,18 +402,26 @@ export default function AdminCreateMarket() {
                 Split evenly
               </button>
             </div>
-            {/* Price sum indicator */}
+            {/* Price sum indicator — only enforce sum-to-1 for mutually exclusive markets */}
             {(() => {
               const validOpts = options.filter((o) => o.label.trim());
               const hasAnyPrice = validOpts.some((o) => o.price.trim());
               if (!hasAnyPrice || validOpts.length < 2) return null;
               const sum = validOpts.reduce((s, o) => s + (parseFloat(o.price) || 0), 0);
-              const isValid = Math.abs(sum - 1) <= 0.05;
-              return (
-                <p className={`text-[11px] ${isValid ? "text-emerald-400" : "text-rose-400"}`}>
-                  Price total: {sum.toFixed(2)} {isValid ? "\u2713" : "(should be ~1.00)"}
-                </p>
-              );
+              if (exclusiveMulti) {
+                const isValid = Math.abs(sum - 1) <= 0.05;
+                return (
+                  <p className={`text-[11px] ${isValid ? "text-emerald-400" : "text-rose-400"}`}>
+                    Price total: {sum.toFixed(2)} {isValid ? "\u2713" : "(should be ~1.00)"}
+                  </p>
+                );
+              } else {
+                return (
+                  <p className="text-[11px] text-muted-foreground">
+                    Price total: {sum.toFixed(2)} (no sum constraint — each option is independent)
+                  </p>
+                );
+              }
             })()}
           </div>
         )}
