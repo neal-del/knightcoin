@@ -20,6 +20,7 @@ import {
   Coins,
   MessageSquarePlus,
   MessageSquare,
+  ScrollText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PerplexityAttribution } from "@/components/PerplexityAttribution";
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
   { href: "/wallet", label: "Wallet", icon: Coins },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/request-market", label: "Request", icon: MessageSquarePlus },
+  { href: "/policies", label: "Policies", icon: ScrollText },
 ];
 
 const ADMIN_NAV = [

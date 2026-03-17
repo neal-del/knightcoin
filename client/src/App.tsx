@@ -24,6 +24,7 @@ import AdminUsers from "@/pages/AdminUsers";
 import AdminEditMarket from "@/pages/AdminEditMarket";
 import AdminRequests from "@/pages/AdminRequests";
 import RequestMarket from "@/pages/RequestMarket";
+import Policies from "@/pages/Policies";
 import NotFound from "@/pages/not-found";
 
 // Route guard: redirects non-admins to home
@@ -53,6 +54,7 @@ function AppRouter() {
         <Route path="/admin/users">{() => <AdminGuard component={AdminUsers} />}</Route>
         <Route path="/admin/requests">{() => <AdminGuard component={AdminRequests} />}</Route>
         <Route path="/request-market" component={RequestMarket} />
+        <Route path="/policies" component={Policies} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
