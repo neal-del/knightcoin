@@ -167,9 +167,16 @@ export default function MarketDetail() {
             </div>
             <div className="flex items-start gap-3">
               <span className="text-3xl">{market.icon}</span>
-              <h1 className="text-xl font-bold text-foreground leading-tight" data-testid="text-market-title">
-                {market.title}
-              </h1>
+              <div>
+                <h1 className="text-xl font-bold text-foreground leading-tight" data-testid="text-market-title">
+                  {market.title}
+                </h1>
+                {market.suggestedBy && (
+                  <p className="text-xs text-muted-foreground/70 italic mt-0.5">
+                    Suggested by {market.suggestedBy}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 

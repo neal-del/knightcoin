@@ -211,10 +211,15 @@ export default function Login() {
                     Email verified: <strong className="text-primary">{email}</strong>
                   </p>
                 </div>
+                <div className="rounded-lg bg-rose-500/5 border border-rose-500/15 p-3 mb-1">
+                  <p className="text-[11px] text-rose-300 leading-relaxed">
+                    <strong className="text-rose-400">Important:</strong> Your username and display name must be your real name (e.g. "John Smith"). Accounts that do not use a real name will be terminated.
+                  </p>
+                </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1.5 block">Display Name</label>
+                  <label className="text-xs text-muted-foreground mb-1.5 block">Display Name (your real name)</label>
                   <Input
-                    placeholder="e.g. KnightRider99"
+                    placeholder="e.g. John Smith"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
                     className="bg-card"
@@ -223,9 +228,9 @@ export default function Login() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1.5 block">Username</label>
+                  <label className="text-xs text-muted-foreground mb-1.5 block">Username (your real name)</label>
                   <Input
-                    placeholder="username"
+                    placeholder="e.g. john.smith"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     className="bg-card"

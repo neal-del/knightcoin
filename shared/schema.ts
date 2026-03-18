@@ -56,6 +56,7 @@ export const markets = pgTable("markets", {
   resolvedAt: text("resolved_at"),
   resolvedBy: text("resolved_by"), // admin user id who resolved
   exclusiveMulti: boolean("exclusive_multi").notNull().default(true), // true = only one option can win (mutually exclusive), false = multiple options can resolve YES
+  suggestedBy: text("suggested_by"), // display name of the user who suggested this market (null if not suggested or user opted out)
 });
 
 export const insertMarketSchema = createInsertSchema(markets).omit({
@@ -123,6 +124,7 @@ export const marketRequests = pgTable("market_requests", {
   createdAt: text("created_at").notNull(),
   reviewedAt: text("reviewed_at"),
   reviewedBy: text("reviewed_by"),
+  showName: boolean("show_name").notNull().default(false), // user opt-in to show their name on the market
 });
 
 export const insertMarketRequestSchema = createInsertSchema(marketRequests).omit({

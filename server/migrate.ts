@@ -178,6 +178,16 @@ export async function runMigrations() {
       ALTER TABLE markets ADD COLUMN IF NOT EXISTS exclusive_multi BOOLEAN NOT NULL DEFAULT true;
     `);
 
+    // Add suggested_by column to markets
+    await pool.query(`
+      ALTER TABLE markets ADD COLUMN IF NOT EXISTS suggested_by TEXT;
+    `);
+
+    // Add show_name column to market_requests
+    await pool.query(`
+      ALTER TABLE market_requests ADD COLUMN IF NOT EXISTS show_name BOOLEAN NOT NULL DEFAULT false;
+    `);
+
     // Chat messages table (per-market chat)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS chat_messages (

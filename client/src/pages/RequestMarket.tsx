@@ -35,6 +35,7 @@ export default function RequestMarket() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("sports");
+  const [showName, setShowName] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const { data: myRequests } = useQuery<MarketRequest[]>({
@@ -66,6 +67,7 @@ export default function RequestMarket() {
         title,
         description,
         category,
+        showName,
         userId: user.id,
         createdAt: new Date().toISOString(),
       });
@@ -132,6 +134,21 @@ export default function RequestMarket() {
             ))}
           </select>
         </div>
+
+        <label className="flex items-start gap-2.5 cursor-pointer rounded-lg border border-border bg-muted/20 px-3 py-2.5">
+          <input
+            type="checkbox"
+            checked={showName}
+            onChange={(e) => setShowName(e.target.checked)}
+            className="rounded border-border bg-card text-primary focus:ring-primary/50 w-3.5 h-3.5 mt-0.5"
+          />
+          <div>
+            <span className="text-xs font-medium text-foreground">Feature my name on this market</span>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              If approved, the market will show "Suggested by {user.displayName}" beneath the title.
+            </p>
+          </div>
+        </label>
 
         <Button type="submit" className="w-full gap-2" disabled={loading} data-testid="button-submit-request">
           {loading ? "Submitting..." : "Submit Request"}

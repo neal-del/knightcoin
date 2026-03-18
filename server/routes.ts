@@ -615,6 +615,17 @@ export async function registerRoutes(
         createdAt: new Date().toISOString(),
       });
 
+      // Auto chat message for live transaction feed
+      try {
+        await storage.createChatMessage({
+          marketId,
+          userId: "__system__",
+          displayName: "Trade Feed",
+          content: `${user.displayName} staked ${amount} KC on ${position.toUpperCase()}`,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (_) { /* non-critical */ }
+
       res.json(bet);
     } catch (err) {
       res.status(500).json({ error: "Failed to place bet" });
@@ -1207,6 +1218,17 @@ export async function registerRoutes(
         createdAt: new Date().toISOString(),
       });
 
+      // Auto chat message for live transaction feed
+      try {
+        await storage.createChatMessage({
+          marketId,
+          userId: "__system__",
+          displayName: "Trade Feed",
+          content: `${user.displayName} staked ${amount} KC on "${option.label}"`,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (_) { /* non-critical */ }
+
       res.json(bet);
     } catch (err) {
       res.status(500).json({ error: "Failed to place bet" });
@@ -1368,6 +1390,14 @@ export async function registerRoutes(
 
     // Auto-create market from the request
     const defaultCloses = closesAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days default
+
+    // Resolve suggester name if they opted in
+    let suggestedBy: string | null = null;
+    if (marketReq.showName) {
+      const suggester = await storage.getUser(marketReq.userId);
+      if (suggester) suggestedBy = suggester.displayName;
+    }
+
     const market = await storage.createMarket({
       title: marketReq.title,
       description: marketReq.description,
@@ -1383,6 +1413,7 @@ export async function registerRoutes(
       createdBy: adminUser.id,
       resolutionSource: "manual",
       resolutionData: null,
+      suggestedBy,
     });
 
     res.json({ request: updated, market });

@@ -4,7 +4,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { useState, useRef, useEffect } from "react";
-import { MessageCircle, Send, Trash2, Lock, Shield } from "lucide-react";
+import { MessageCircle, Send, Trash2, Lock, Shield, TrendingUp } from "lucide-react";
 import type { ChatMessage } from "@shared/schema";
 import { formatKC } from "@/lib/format";
 
@@ -136,20 +136,16 @@ export default function MarketChat({ marketId }: { marketId: string }) {
                 No messages yet. Be the first to say something.
               </p>
             ) : (
-              messages.map((msg) => (
-                <div key={msg.id} className="group flex gap-2.5">
-                  {/* Avatar */}
-                  <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
-                    <span className="text-[11px] font-bold text-primary">
-                      {msg.displayName.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-foreground">
-                        {msg.displayName}
+              messages.map((msg) => {
+                const isSystem = msg.userId === "__system__";
+                if (isSystem) {
+                  return (
+                    <div key={msg.id} className="group flex items-center gap-2 px-2 py-1">
+                      <TrendingUp className="w-3 h-3 text-primary/60 shrink-0" />
+                      <span className="text-[11px] text-primary/70 italic">
+                        {msg.content}
                       </span>
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-[9px] text-muted-foreground/50 ml-auto shrink-0">
                         {timeAgo(msg.createdAt)}
                       </span>
                       {isAdmin && (
@@ -162,12 +158,41 @@ export default function MarketChat({ marketId }: { marketId: string }) {
                         </button>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed break-words">
-                      {msg.content}
-                    </p>
+                  );
+                }
+                return (
+                  <div key={msg.id} className="group flex gap-2.5">
+                    {/* Avatar */}
+                    <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                      <span className="text-[11px] font-bold text-primary">
+                        {msg.displayName.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-foreground">
+                          {msg.displayName}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {timeAgo(msg.createdAt)}
+                        </span>
+                        {isAdmin && (
+                          <button
+                            onClick={() => deleteMutation.mutate(msg.id)}
+                            className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-rose-400 transition-all"
+                            title="Delete message"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed break-words">
+                        {msg.content}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 
