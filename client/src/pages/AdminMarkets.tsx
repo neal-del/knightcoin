@@ -102,7 +102,7 @@ export default function AdminMarkets() {
             {f.charAt(0).toUpperCase() + f.slice(1)}
             {markets && (
               <span className="ml-1.5 tabular-nums">
-                ({f === "all" ? markets.length : filtered?.length || 0})
+                ({f === "all" ? markets.length : f === "active" ? markets.filter((m) => !m.resolved).length : markets.filter((m) => m.resolved).length})
               </span>
             )}
           </button>
