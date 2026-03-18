@@ -22,10 +22,13 @@ import {
   MessageSquarePlus,
   MessageSquare,
   ScrollText,
+  Mail,
+  Megaphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PerplexityAttribution } from "@/components/PerplexityAttribution";
 import { queryClient } from "@/lib/queryClient";
+import { useQuery } from "@tanstack/react-query";
 import { useState, useCallback } from "react";
 import { RefreshCw } from "lucide-react";
 
@@ -35,6 +38,7 @@ const NAV_ITEMS = [
   { href: "/portfolio", label: "Portfolio", icon: Wallet },
   { href: "/wallet", label: "Wallet", icon: Coins },
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy },
+  { href: "/mailbox", label: "Mailbox", icon: Mail },
   { href: "/request-market", label: "Request", icon: MessageSquarePlus },
   { href: "/policies", label: "Policies", icon: ScrollText },
 ];
@@ -46,6 +50,7 @@ const ADMIN_NAV = [
   { href: "/admin/resolve", label: "Resolve", icon: CheckCircle2 },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/requests", label: "Requests", icon: MessageSquare },
+  { href: "/admin/messages", label: "Send Msg", icon: Megaphone },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -54,6 +59,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { theme, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  const { data: unreadData } = useQuery<{ count: number }>({
+    queryKey: ["/api/mailbox/unread"],
+    enabled: !!user,
+    refetchInterval: 30000,
+  });
+  const unreadCount = unreadData?.count ?? 0;
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -93,6 +105,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 >
                   <Icon className="w-4 h-4" />
                   {label}
+                  {label === "Mailbox" && unreadCount > 0 && (
+                    <span className="ml-auto text-[10px] font-bold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full leading-none">
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
                 </div>
               </Link>
             );
@@ -232,6 +249,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 >
                   <Icon className="w-4 h-4" />
                   {label}
+                  {label === "Mailbox" && unreadCount > 0 && (
+                    <span className="ml-auto text-[10px] font-bold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full leading-none">
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
                 </div>
               </Link>
             ))}

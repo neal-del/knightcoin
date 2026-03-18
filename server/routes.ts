@@ -1539,5 +1539,194 @@ export async function registerRoutes(
     res.json(safeUser);
   });
 
+  // ═══════════════════════════════════════════
+  // MARKET CHAT
+  // ═══════════════════════════════════════════
+
+  // GET /api/markets/:id/chat — anyone can read
+  app.get("/api/markets/:id/chat", async (req, res) => {
+    try {
+      const messages = await storage.getChatMessages(req.params.id);
+      res.json(messages);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/markets/:id/chat — requires auth + 10 KC total stake in this market
+  app.post("/api/markets/:id/chat", async (req, res) => {
+    const userId = await getCurrentUserId(req);
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+
+    const user = await storage.getUser(userId);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const marketId = req.params.id;
+    const market = await storage.getMarket(marketId);
+    if (!market) return res.status(404).json({ error: "Market not found" });
+
+    // Check if user has >= 10 KC staked in this market
+    const userBets = await storage.getBetsByUser(userId);
+    const marketStake = userBets
+      .filter((b) => b.marketId === marketId)
+      .reduce((sum, b) => sum + b.amount, 0);
+
+    if (marketStake < 10 && user.role !== "admin") {
+      return res.status(403).json({
+        error: "You need at least 10 KC staked in this market to chat.",
+        currentStake: marketStake,
+      });
+    }
+
+    const { content } = req.body;
+    if (!content || typeof content !== "string" || content.trim().length === 0) {
+      return res.status(400).json({ error: "Message content is required" });
+    }
+    if (content.length > 500) {
+      return res.status(400).json({ error: "Message too long (max 500 characters)" });
+    }
+
+    try {
+      const msg = await storage.createChatMessage({
+        marketId,
+        userId,
+        displayName: user.displayName,
+        content: content.trim(),
+        createdAt: new Date().toISOString(),
+      });
+      res.json(msg);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // DELETE /api/chat/:id — admin only
+  app.delete("/api/chat/:id", requireAdmin, async (req, res) => {
+    try {
+      const deleted = await storage.deleteChatMessage(req.params.id);
+      res.json({ deleted });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/markets/:id/chat/eligible — check if current user can chat
+  app.get("/api/markets/:id/chat/eligible", async (req, res) => {
+    const userId = await getCurrentUserId(req);
+    if (!userId) return res.json({ eligible: false, reason: "not_authenticated", stake: 0 });
+
+    const user = await storage.getUser(userId);
+    if (!user) return res.json({ eligible: false, reason: "not_found", stake: 0 });
+    if (user.role === "admin") return res.json({ eligible: true, stake: 0, isAdmin: true });
+
+    const userBets = await storage.getBetsByUser(userId);
+    const marketStake = userBets
+      .filter((b) => b.marketId === req.params.id)
+      .reduce((sum, b) => sum + b.amount, 0);
+
+    res.json({
+      eligible: marketStake >= 10,
+      stake: marketStake,
+      needed: Math.max(0, 10 - marketStake),
+    });
+  });
+
+  // ═══════════════════════════════════════════
+  // MAILBOX (user inbox)
+  // ═══════════════════════════════════════════
+
+  // GET /api/mailbox — get current user's messages
+  app.get("/api/mailbox", async (req, res) => {
+    const userId = await getCurrentUserId(req);
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+    try {
+      const messages = await storage.getMailboxMessages(userId);
+      res.json(messages);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/mailbox/unread — unread count for badge
+  app.get("/api/mailbox/unread", async (req, res) => {
+    const userId = await getCurrentUserId(req);
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+    try {
+      const count = await storage.getUnreadMailboxCount(userId);
+      res.json({ count });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // PATCH /api/mailbox/:id/read — mark single message as read
+  app.patch("/api/mailbox/:id/read", async (req, res) => {
+    const userId = await getCurrentUserId(req);
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+    try {
+      await storage.markMailboxRead(req.params.id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/mailbox/read-all — mark all as read
+  app.post("/api/mailbox/read-all", async (req, res) => {
+    const userId = await getCurrentUserId(req);
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+    try {
+      await storage.markAllMailboxRead(userId);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ═══════════════════════════════════════════
+  // ADMIN: SEND MESSAGE
+  // ═══════════════════════════════════════════
+
+  // POST /api/admin/messages — send a message to one user or all users
+  app.post("/api/admin/messages", requireAdmin, async (req, res) => {
+    const admin = (req as any).adminUser;
+    const { recipientId, subject, body } = req.body;
+
+    if (!subject || !body) {
+      return res.status(400).json({ error: "Subject and body are required" });
+    }
+
+    try {
+      if (recipientId === "__all__") {
+        // Broadcast to all users
+        const msg = await storage.createMailboxMessage({
+          recipientId: "__all__",
+          senderId: admin.id,
+          senderName: admin.displayName,
+          subject,
+          body,
+          createdAt: new Date().toISOString(),
+        });
+        res.json(msg);
+      } else {
+        // Send to specific user
+        const target = await storage.getUser(recipientId);
+        if (!target) return res.status(404).json({ error: "User not found" });
+
+        const msg = await storage.createMailboxMessage({
+          recipientId,
+          senderId: admin.id,
+          senderName: admin.displayName,
+          subject,
+          body,
+          createdAt: new Date().toISOString(),
+        });
+        res.json(msg);
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return httpServer;
 }

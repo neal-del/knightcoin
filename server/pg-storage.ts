@@ -7,6 +7,8 @@ import {
   transactions,
   marketRequests,
   marketOptions,
+  chatMessages,
+  mailboxMessages,
   type User,
   type InsertUser,
   type Market,
@@ -19,6 +21,10 @@ import {
   type InsertMarketRequest,
   type MarketOption,
   type InsertMarketOption,
+  type ChatMessage,
+  type InsertChatMessage,
+  type MailboxMessage,
+  type InsertMailboxMessage,
 } from "@shared/schema";
 import type { IStorage } from "./storage";
 
@@ -433,5 +439,86 @@ export class PgStorage implements IStorage {
     await getDb()
       .delete(marketOptions)
       .where(eq(marketOptions.marketId, marketId));
+  }
+
+  // ── Chat Messages ──
+
+  async getChatMessages(marketId: string): Promise<ChatMessage[]> {
+    return getDb()
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.marketId, marketId))
+      .orderBy(chatMessages.createdAt);
+  }
+
+  async createChatMessage(msg: InsertChatMessage): Promise<ChatMessage> {
+    const [row] = await getDb().insert(chatMessages).values(msg).returning();
+    return row;
+  }
+
+  async deleteChatMessage(id: string): Promise<boolean> {
+    const result = await getDb()
+      .delete(chatMessages)
+      .where(eq(chatMessages.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
+  // ── Mailbox Messages ──
+
+  async getMailboxMessages(userId: string): Promise<MailboxMessage[]> {
+    return getDb()
+      .select()
+      .from(mailboxMessages)
+      .where(
+        or(
+          eq(mailboxMessages.recipientId, userId),
+          eq(mailboxMessages.recipientId, "__all__")
+        )
+      )
+      .orderBy(desc(mailboxMessages.createdAt));
+  }
+
+  async getUnreadMailboxCount(userId: string): Promise<number> {
+    const rows = await getDb()
+      .select({ count: sql<number>`count(*)` })
+      .from(mailboxMessages)
+      .where(
+        and(
+          or(
+            eq(mailboxMessages.recipientId, userId),
+            eq(mailboxMessages.recipientId, "__all__")
+          ),
+          eq(mailboxMessages.read, false)
+        )
+      );
+    return Number(rows[0]?.count ?? 0);
+  }
+
+  async createMailboxMessage(msg: InsertMailboxMessage): Promise<MailboxMessage> {
+    const [row] = await getDb().insert(mailboxMessages).values({ ...msg, read: false }).returning();
+    return row;
+  }
+
+  async markMailboxRead(id: string): Promise<void> {
+    await getDb()
+      .update(mailboxMessages)
+      .set({ read: true })
+      .where(eq(mailboxMessages.id, id));
+  }
+
+  async markAllMailboxRead(userId: string): Promise<void> {
+    await getDb()
+      .update(mailboxMessages)
+      .set({ read: true })
+      .where(
+        and(
+          or(
+            eq(mailboxMessages.recipientId, userId),
+            eq(mailboxMessages.recipientId, "__all__")
+          ),
+          eq(mailboxMessages.read, false)
+        )
+      );
   }
 }

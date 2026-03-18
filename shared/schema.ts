@@ -155,3 +155,40 @@ export const insertMarketOptionSchema = createInsertSchema(marketOptions).omit({
 
 export type InsertMarketOption = z.infer<typeof insertMarketOptionSchema>;
 export type MarketOption = typeof marketOptions.$inferSelect;
+
+// Chat Messages table (per-market chat)
+export const chatMessages = pgTable("chat_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  marketId: varchar("market_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  displayName: text("display_name").notNull(),
+  content: text("content").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
+  id: true,
+});
+
+export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
+export type ChatMessage = typeof chatMessages.$inferSelect;
+
+// Mailbox Messages table (admin → user notifications)
+export const mailboxMessages = pgTable("mailbox_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  recipientId: varchar("recipient_id").notNull(), // user id, or '__all__' for broadcast
+  senderId: varchar("sender_id").notNull(), // admin user id or '__system__'
+  senderName: text("sender_name").notNull(),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  read: boolean("read").notNull().default(false),
+  createdAt: text("created_at").notNull(),
+});
+
+export const insertMailboxMessageSchema = createInsertSchema(mailboxMessages).omit({
+  id: true,
+  read: true,
+});
+
+export type InsertMailboxMessage = z.infer<typeof insertMailboxMessageSchema>;
+export type MailboxMessage = typeof mailboxMessages.$inferSelect;

@@ -5,6 +5,8 @@ import {
   type Transaction, type InsertTransaction,
   type MarketRequest, type InsertMarketRequest,
   type MarketOption, type InsertMarketOption,
+  type ChatMessage, type InsertChatMessage,
+  type MailboxMessage, type InsertMailboxMessage,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -68,6 +70,18 @@ export interface IStorage {
   createMarketOption(opt: InsertMarketOption): Promise<MarketOption>;
   updateMarketOption(id: string, updates: Partial<MarketOption>): Promise<MarketOption | undefined>;
   deleteMarketOptions(marketId: string): Promise<void>;
+
+  // Chat Messages
+  getChatMessages(marketId: string): Promise<ChatMessage[]>;
+  createChatMessage(msg: InsertChatMessage): Promise<ChatMessage>;
+  deleteChatMessage(id: string): Promise<boolean>;
+
+  // Mailbox Messages
+  getMailboxMessages(userId: string): Promise<MailboxMessage[]>;
+  getUnreadMailboxCount(userId: string): Promise<number>;
+  createMailboxMessage(msg: InsertMailboxMessage): Promise<MailboxMessage>;
+  markMailboxRead(id: string): Promise<void>;
+  markAllMailboxRead(userId: string): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -763,6 +777,62 @@ export class MemStorage implements IStorage {
         this.marketOptions.delete(id);
       }
     }
+  }
+
+  // Chat Messages
+  private chatMessages: Map<string, ChatMessage> = new Map();
+
+  async getChatMessages(marketId: string): Promise<ChatMessage[]> {
+    return Array.from(this.chatMessages.values())
+      .filter((m) => m.marketId === marketId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async createChatMessage(msg: InsertChatMessage): Promise<ChatMessage> {
+    const id = randomUUID();
+    const message: ChatMessage = { id, ...msg };
+    this.chatMessages.set(id, message);
+    return message;
+  }
+
+  async deleteChatMessage(id: string): Promise<boolean> {
+    return this.chatMessages.delete(id);
+  }
+
+  // Mailbox Messages
+  private mailboxMessages: Map<string, MailboxMessage> = new Map();
+
+  async getMailboxMessages(userId: string): Promise<MailboxMessage[]> {
+    return Array.from(this.mailboxMessages.values())
+      .filter((m) => m.recipientId === userId || m.recipientId === "__all__")
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async getUnreadMailboxCount(userId: string): Promise<number> {
+    return Array.from(this.mailboxMessages.values())
+      .filter((m) => (m.recipientId === userId || m.recipientId === "__all__") && !m.read)
+      .length;
+  }
+
+  async createMailboxMessage(msg: InsertMailboxMessage): Promise<MailboxMessage> {
+    const id = randomUUID();
+    const message: MailboxMessage = { id, read: false, ...msg };
+    this.mailboxMessages.set(id, message);
+    return message;
+  }
+
+  async markMailboxRead(id: string): Promise<void> {
+    const msg = this.mailboxMessages.get(id);
+    if (msg) { msg.read = true; this.mailboxMessages.set(id, msg); }
+  }
+
+  async markAllMailboxRead(userId: string): Promise<void> {
+    Array.from(this.mailboxMessages.entries()).forEach(([id, msg]) => {
+      if (msg.recipientId === userId || msg.recipientId === "__all__") {
+        msg.read = true;
+        this.mailboxMessages.set(id, msg);
+      }
+    });
   }
 }
 

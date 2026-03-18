@@ -178,6 +178,34 @@ export async function runMigrations() {
       ALTER TABLE markets ADD COLUMN IF NOT EXISTS exclusive_multi BOOLEAN NOT NULL DEFAULT true;
     `);
 
+    // Chat messages table (per-market chat)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        market_id VARCHAR NOT NULL,
+        user_id VARCHAR NOT NULL,
+        display_name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_chat_messages_market ON chat_messages(market_id);
+    `);
+
+    // Mailbox messages table (admin -> user notifications)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS mailbox_messages (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        recipient_id VARCHAR NOT NULL,
+        sender_id VARCHAR NOT NULL,
+        sender_name TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        body TEXT NOT NULL,
+        read BOOLEAN NOT NULL DEFAULT false,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_mailbox_recipient ON mailbox_messages(recipient_id);
+    `);
+
     console.log("[migrate] Tables verified/created successfully.");
   } catch (err) {
     console.error("[migrate] Migration failed:", err);

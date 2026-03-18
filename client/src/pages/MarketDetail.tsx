@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { CATEGORY_LABELS, CATEGORY_COLORS, formatTimeLeft } from "@/components/MarketCard";
 import { ArrowLeft, TrendingUp, Clock, Users, Info } from "lucide-react";
 import type { Market, MarketOption } from "@shared/schema";
+import MarketChat from "@/components/MarketChat";
 
 const OPTION_COLORS = [
   "border-cyan-500/30 bg-cyan-500/10 text-cyan-400",
@@ -246,6 +247,9 @@ export default function MarketDetail() {
               {market.description}
             </p>
           </div>
+
+          {/* Market Chat */}
+          <MarketChat marketId={market.id} />
         </div>
 
         {/* Right — Trading panel */}
