@@ -471,12 +471,31 @@ export class PgStorage implements IStorage {
       .select()
       .from(mailboxMessages)
       .where(
-        or(
-          eq(mailboxMessages.recipientId, userId),
-          eq(mailboxMessages.recipientId, "__all__")
+        and(
+          or(
+            eq(mailboxMessages.recipientId, userId),
+            eq(mailboxMessages.recipientId, "__all__")
+          ),
+          sql`${mailboxMessages.deletedAt} IS NULL`
         )
       )
       .orderBy(desc(mailboxMessages.createdAt));
+  }
+
+  async getTrashMessages(userId: string): Promise<MailboxMessage[]> {
+    return getDb()
+      .select()
+      .from(mailboxMessages)
+      .where(
+        and(
+          or(
+            eq(mailboxMessages.recipientId, userId),
+            eq(mailboxMessages.recipientId, "__all__")
+          ),
+          sql`${mailboxMessages.deletedAt} IS NOT NULL`
+        )
+      )
+      .orderBy(desc(mailboxMessages.deletedAt));
   }
 
   async getUnreadMailboxCount(userId: string): Promise<number> {
@@ -489,14 +508,15 @@ export class PgStorage implements IStorage {
             eq(mailboxMessages.recipientId, userId),
             eq(mailboxMessages.recipientId, "__all__")
           ),
-          eq(mailboxMessages.read, false)
+          eq(mailboxMessages.read, false),
+          sql`${mailboxMessages.deletedAt} IS NULL`
         )
       );
     return Number(rows[0]?.count ?? 0);
   }
 
   async createMailboxMessage(msg: InsertMailboxMessage): Promise<MailboxMessage> {
-    const [row] = await getDb().insert(mailboxMessages).values({ ...msg, read: false }).returning();
+    const [row] = await getDb().insert(mailboxMessages).values({ ...msg, read: false, deletedAt: null }).returning();
     return row;
   }
 
@@ -517,8 +537,45 @@ export class PgStorage implements IStorage {
             eq(mailboxMessages.recipientId, userId),
             eq(mailboxMessages.recipientId, "__all__")
           ),
-          eq(mailboxMessages.read, false)
+          eq(mailboxMessages.read, false),
+          sql`${mailboxMessages.deletedAt} IS NULL`
         )
       );
+  }
+
+  async softDeleteMessage(id: string): Promise<void> {
+    await getDb()
+      .update(mailboxMessages)
+      .set({ deletedAt: new Date().toISOString() })
+      .where(eq(mailboxMessages.id, id));
+  }
+
+  async restoreMessage(id: string): Promise<void> {
+    await getDb()
+      .update(mailboxMessages)
+      .set({ deletedAt: null })
+      .where(eq(mailboxMessages.id, id));
+  }
+
+  async permanentDeleteMessage(id: string): Promise<boolean> {
+    const result = await getDb()
+      .delete(mailboxMessages)
+      .where(eq(mailboxMessages.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
+  async purgeExpiredTrash(): Promise<number> {
+    const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    const result = await getDb()
+      .delete(mailboxMessages)
+      .where(
+        and(
+          sql`${mailboxMessages.deletedAt} IS NOT NULL`,
+          sql`${mailboxMessages.deletedAt} < ${cutoff}`
+        )
+      )
+      .returning();
+    return result.length;
   }
 }

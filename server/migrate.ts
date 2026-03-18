@@ -216,6 +216,11 @@ export async function runMigrations() {
       CREATE INDEX IF NOT EXISTS idx_mailbox_recipient ON mailbox_messages(recipient_id);
     `);
 
+    // Add deleted_at column to mailbox_messages for soft-delete / trash
+    await pool.query(`
+      ALTER TABLE mailbox_messages ADD COLUMN IF NOT EXISTS deleted_at TEXT;
+    `);
+
     console.log("[migrate] Tables verified/created successfully.");
   } catch (err) {
     console.error("[migrate] Migration failed:", err);

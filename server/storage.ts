@@ -78,10 +78,15 @@ export interface IStorage {
 
   // Mailbox Messages
   getMailboxMessages(userId: string): Promise<MailboxMessage[]>;
+  getTrashMessages(userId: string): Promise<MailboxMessage[]>;
   getUnreadMailboxCount(userId: string): Promise<number>;
   createMailboxMessage(msg: InsertMailboxMessage): Promise<MailboxMessage>;
   markMailboxRead(id: string): Promise<void>;
   markAllMailboxRead(userId: string): Promise<void>;
+  softDeleteMessage(id: string): Promise<void>;
+  restoreMessage(id: string): Promise<void>;
+  permanentDeleteMessage(id: string): Promise<boolean>;
+  purgeExpiredTrash(): Promise<number>;
 }
 
 export class MemStorage implements IStorage {
@@ -804,19 +809,25 @@ export class MemStorage implements IStorage {
 
   async getMailboxMessages(userId: string): Promise<MailboxMessage[]> {
     return Array.from(this.mailboxMessages.values())
-      .filter((m) => m.recipientId === userId || m.recipientId === "__all__")
+      .filter((m) => (m.recipientId === userId || m.recipientId === "__all__") && !m.deletedAt)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async getTrashMessages(userId: string): Promise<MailboxMessage[]> {
+    return Array.from(this.mailboxMessages.values())
+      .filter((m) => (m.recipientId === userId || m.recipientId === "__all__") && !!m.deletedAt)
+      .sort((a, b) => (b.deletedAt || "").localeCompare(a.deletedAt || ""));
   }
 
   async getUnreadMailboxCount(userId: string): Promise<number> {
     return Array.from(this.mailboxMessages.values())
-      .filter((m) => (m.recipientId === userId || m.recipientId === "__all__") && !m.read)
+      .filter((m) => (m.recipientId === userId || m.recipientId === "__all__") && !m.read && !m.deletedAt)
       .length;
   }
 
   async createMailboxMessage(msg: InsertMailboxMessage): Promise<MailboxMessage> {
     const id = randomUUID();
-    const message: MailboxMessage = { id, read: false, ...msg };
+    const message: MailboxMessage = { id, read: false, deletedAt: null, ...msg };
     this.mailboxMessages.set(id, message);
     return message;
   }
@@ -828,11 +839,37 @@ export class MemStorage implements IStorage {
 
   async markAllMailboxRead(userId: string): Promise<void> {
     Array.from(this.mailboxMessages.entries()).forEach(([id, msg]) => {
-      if (msg.recipientId === userId || msg.recipientId === "__all__") {
+      if ((msg.recipientId === userId || msg.recipientId === "__all__") && !msg.deletedAt) {
         msg.read = true;
         this.mailboxMessages.set(id, msg);
       }
     });
+  }
+
+  async softDeleteMessage(id: string): Promise<void> {
+    const msg = this.mailboxMessages.get(id);
+    if (msg) { msg.deletedAt = new Date().toISOString(); this.mailboxMessages.set(id, msg); }
+  }
+
+  async restoreMessage(id: string): Promise<void> {
+    const msg = this.mailboxMessages.get(id);
+    if (msg) { msg.deletedAt = null; this.mailboxMessages.set(id, msg); }
+  }
+
+  async permanentDeleteMessage(id: string): Promise<boolean> {
+    return this.mailboxMessages.delete(id);
+  }
+
+  async purgeExpiredTrash(): Promise<number> {
+    const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    let count = 0;
+    Array.from(this.mailboxMessages.entries()).forEach(([id, msg]) => {
+      if (msg.deletedAt && msg.deletedAt < cutoff) {
+        this.mailboxMessages.delete(id);
+        count++;
+      }
+    });
+    return count;
   }
 }
 

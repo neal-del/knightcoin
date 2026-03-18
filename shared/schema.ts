@@ -184,6 +184,7 @@ export const mailboxMessages = pgTable("mailbox_messages", {
   subject: text("subject").notNull(),
   body: text("body").notNull(),
   read: boolean("read").notNull().default(false),
+  deletedAt: text("deleted_at"), // ISO timestamp when user soft-deleted; null = inbox; auto-purged after 3 days
   createdAt: text("created_at").notNull(),
 });
 

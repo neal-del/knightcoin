@@ -1714,6 +1714,56 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/mailbox/trash — get trashed messages
+  app.get("/api/mailbox/trash", async (req, res) => {
+    const userId = await getCurrentUserId(req);
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+    try {
+      // Auto-purge expired trash (> 3 days) on each fetch
+      await storage.purgeExpiredTrash();
+      const messages = await storage.getTrashMessages(userId);
+      res.json(messages);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // PATCH /api/mailbox/:id/delete — soft delete (move to trash)
+  app.patch("/api/mailbox/:id/delete", async (req, res) => {
+    const userId = await getCurrentUserId(req);
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+    try {
+      await storage.softDeleteMessage(req.params.id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // PATCH /api/mailbox/:id/restore — move back from trash to inbox
+  app.patch("/api/mailbox/:id/restore", async (req, res) => {
+    const userId = await getCurrentUserId(req);
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+    try {
+      await storage.restoreMessage(req.params.id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // DELETE /api/mailbox/:id — permanently delete
+  app.delete("/api/mailbox/:id", async (req, res) => {
+    const userId = await getCurrentUserId(req);
+    if (!userId) return res.status(401).json({ error: "Not authenticated" });
+    try {
+      const deleted = await storage.permanentDeleteMessage(req.params.id);
+      res.json({ deleted });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ═══════════════════════════════════════════
   // ADMIN: SEND MESSAGE
   // ═══════════════════════════════════════════
