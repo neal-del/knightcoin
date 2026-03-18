@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Save } from "lucide-react";
-import type { Market } from "@shared/schema";
+import type { Market, MarketOption } from "@shared/schema";
 
 const CATEGORIES = [
   { value: "sports", label: "School Sports", icon: "🏀" },
@@ -41,7 +41,17 @@ export default function AdminEditMarket() {
   const [closesAt, setClosesAt] = useState("");
   const [icon, setIcon] = useState("📊");
   const [featured, setFeatured] = useState(false);
+  const [yesPrice, setYesPrice] = useState("");
+  const [noPrice, setNoPrice] = useState("");
+  const [optionPrices, setOptionPrices] = useState<{ id: string; label: string; price: string }[]>([]);
   const [saving, setSaving] = useState(false);
+
+  const isMulti = market?.marketType === "multi_outcome" || market?.marketType === "time_bracket";
+
+  const { data: options } = useQuery<MarketOption[]>({
+    queryKey: ["/api/markets", params?.id, "options"],
+    enabled: !!params?.id && isMulti,
+  });
 
   useEffect(() => {
     if (market) {
@@ -49,14 +59,21 @@ export default function AdminEditMarket() {
       setDescription(market.description);
       setCategory(market.category);
       setSubcategory(market.subcategory || "");
-      // Convert ISO to datetime-local format
       const d = new Date(market.closesAt);
       const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
       setClosesAt(local);
       setIcon(market.icon || "📊");
       setFeatured(market.featured);
+      setYesPrice(String(market.yesPrice));
+      setNoPrice(String(market.noPrice));
     }
   }, [market]);
+
+  useEffect(() => {
+    if (options) {
+      setOptionPrices(options.map((o) => ({ id: o.id, label: o.label, price: String(o.price) })));
+    }
+  }, [options]);
 
   if (!isAdmin) return null;
 
@@ -89,7 +106,7 @@ export default function AdminEditMarket() {
 
     setSaving(true);
     try {
-      await apiRequest("PATCH", `/api/admin/markets/${market.id}`, {
+      const body: any = {
         title,
         description,
         category,
@@ -97,10 +114,27 @@ export default function AdminEditMarket() {
         closesAt: new Date(closesAt).toISOString(),
         icon,
         featured,
-      });
+      };
+
+      // Include binary prices if not multi
+      if (!isMulti) {
+        body.yesPrice = parseFloat(yesPrice);
+        body.noPrice = parseFloat(noPrice);
+      }
+
+      await apiRequest("PATCH", `/api/admin/markets/${market.id}`, body);
+
+      // Update option prices for multi-option markets
+      if (isMulti && optionPrices.length > 0) {
+        await apiRequest("PATCH", `/api/admin/markets/${market.id}/options`, {
+          options: optionPrices.map((o) => ({ id: o.id, price: parseFloat(o.price) })),
+        });
+      }
+
       queryClient.invalidateQueries({ queryKey: ["/api/admin/markets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/markets", market.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/markets", market.id, "options"] });
       toast({ title: "Market updated" });
       setLocation("/admin/markets");
     } catch (err: any) {
@@ -197,6 +231,80 @@ export default function AdminEditMarket() {
             </div>
           </div>
         </div>
+
+        {/* Prices */}
+        {!isMulti ? (
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">YES Price (0.01–0.99)</label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                max="0.99"
+                value={yesPrice}
+                onChange={(e) => {
+                  setYesPrice(e.target.value);
+                  const v = parseFloat(e.target.value);
+                  if (!isNaN(v)) setNoPrice((1 - v).toFixed(2));
+                }}
+                className="bg-card tabular-nums"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">NO Price (0.01–0.99)</label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                max="0.99"
+                value={noPrice}
+                onChange={(e) => {
+                  setNoPrice(e.target.value);
+                  const v = parseFloat(e.target.value);
+                  if (!isNaN(v)) setYesPrice((1 - v).toFixed(2));
+                }}
+                className="bg-card tabular-nums"
+              />
+            </div>
+          </div>
+        ) : optionPrices.length > 0 ? (
+          <div className="space-y-3">
+            <label className="text-xs text-muted-foreground block">Option Prices (0.01–0.99)</label>
+            {market?.exclusiveMulti === false && (
+              <p className="text-[11px] text-amber-400">Non-exclusive market — prices are independent and don't need to sum to 1.</p>
+            )}
+            {optionPrices.map((opt, i) => (
+              <div key={opt.id} className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground w-5 text-right tabular-nums shrink-0">{i + 1}</span>
+                <span className="text-sm text-foreground flex-1 truncate">{opt.label}</span>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={opt.price}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^0-9.]/g, "");
+                    const next = [...optionPrices];
+                    next[i] = { ...next[i], price: val };
+                    setOptionPrices(next);
+                  }}
+                  className="bg-card w-24 tabular-nums text-center"
+                />
+              </div>
+            ))}
+            {market?.exclusiveMulti !== false && (
+              (() => {
+                const sum = optionPrices.reduce((s, o) => s + (parseFloat(o.price) || 0), 0);
+                const isValid = Math.abs(sum - 1) <= 0.05;
+                return (
+                  <p className={`text-[11px] ${isValid ? "text-emerald-400" : "text-rose-400"}`}>
+                    Price total: {sum.toFixed(2)} {isValid ? "\u2713" : "(should be ~1.00 for exclusive markets)"}
+                  </p>
+                );
+              })()
+            )}
+          </div>
+        ) : null}
 
         <label className="flex items-center gap-3 cursor-pointer">
           <input

@@ -900,6 +900,27 @@ export async function registerRoutes(
     res.json(updated);
   });
 
+  // --- Admin: Update option prices ---
+  app.patch("/api/admin/markets/:id/options", requireAdmin, async (req, res) => {
+    const market = await storage.getMarket(req.params.id);
+    if (!market) return res.status(404).json({ error: "Market not found" });
+
+    const { options } = req.body; // expects [{ id: string, price: number }, ...]
+    if (!Array.isArray(options)) {
+      return res.status(400).json({ error: "options array is required" });
+    }
+
+    const updated: MarketOption[] = [];
+    for (const opt of options) {
+      if (!opt.id || typeof opt.price !== "number") continue;
+      const clamped = Math.max(0.01, Math.min(0.99, opt.price));
+      const result = await storage.updateMarketOption(opt.id, { price: +clamped.toFixed(4) });
+      if (result) updated.push(result);
+    }
+
+    res.json({ ok: true, updated: updated.length });
+  });
+
   // --- Admin: Delete Market ---
   app.delete("/api/admin/markets/:id", requireAdmin, async (req, res) => {
     const market = await storage.getMarket(req.params.id);
