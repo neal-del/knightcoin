@@ -31,6 +31,9 @@ export default function Markets() {
   });
 
   const filtered = markets?.filter((m) => {
+    // Hide resolved markets
+    if (m.resolved) return false;
+
     // Tab filter
     if (activeTab === "school" && !SCHOOL_CATS.includes(m.category)) return false;
     if (activeTab === "macro" && !MACRO_CATS.includes(m.category)) return false;

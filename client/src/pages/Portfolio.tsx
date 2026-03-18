@@ -4,7 +4,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Wallet, ArrowUpRight, ArrowDownRight, Clock, Gift, TrendingUp } from "lucide-react";
+import { Wallet, ArrowUpRight, ArrowDownRight, Clock, Gift, TrendingUp, CheckCircle2, XCircle } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { formatKC } from "@/lib/format";
 import type { Bet, Transaction, Market, MarketOption } from "@shared/schema";
@@ -105,27 +105,104 @@ export default function Portfolio() {
         />
       </div>
 
-      {/* Active positions */}
+      {/* Active positions (unsettled bets only) */}
       <section>
         <h2 className="text-base font-semibold text-foreground mb-4">Active Positions</h2>
         {betsLoading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
           </div>
-        ) : bets && bets.length > 0 ? (
-          <div className="space-y-2">
-            {bets.map((bet) => {
-              const market = marketMap.get(bet.marketId);
-              return (
-                <Link key={bet.id} href={`/market/${bet.marketId}`}>
+        ) : (() => {
+          const activeBets = bets?.filter((b) => !b.settled) || [];
+          return activeBets.length > 0 ? (
+            <div className="space-y-2">
+              {activeBets.map((bet) => {
+                const market = marketMap.get(bet.marketId);
+                return (
+                  <Link key={bet.id} href={`/market/${bet.marketId}`}>
+                    <div
+                      className="flex items-center justify-between p-4 rounded-xl border border-border bg-card hover:border-primary/20 transition-colors cursor-pointer"
+                      data-testid={`card-bet-${bet.id}`}
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <span className="text-lg">{market?.icon || "📊"}</span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {market?.title || "Unknown market"}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {new Date(bet.createdAt).toLocaleDateString()} · Bought at {Math.round(bet.price * 100)}¢
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 shrink-0">
+                        {(() => {
+                          const isBinary = bet.position === "yes" || bet.position === "no";
+                          if (!isBinary) {
+                            const optionLabel = optionLabelMap.get(bet.position);
+                            return (
+                              <Badge
+                                className="text-[10px] px-2 py-0.5 font-semibold bg-violet-500/10 text-violet-400 border-violet-500/20 max-w-[140px] truncate"
+                                variant="outline"
+                              >
+                                {optionLabel || "Loading..."}
+                              </Badge>
+                            );
+                          }
+                          return (
+                            <Badge
+                              className={`text-[10px] px-2 py-0.5 font-semibold ${
+                                bet.position === "yes"
+                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                  : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                              }`}
+                              variant="outline"
+                            >
+                              {bet.position.toUpperCase()}
+                            </Badge>
+                          );
+                        })()}
+                        <span className="text-sm font-bold text-foreground tabular-nums">{formatKC(bet.amount)} KC</span>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 rounded-xl border border-dashed border-border">
+              <p className="text-sm text-muted-foreground mb-2">No active positions.</p>
+              <Link href="/markets">
+                <Button variant="outline" size="sm">Browse Markets</Button>
+              </Link>
+            </div>
+          );
+        })()}
+      </section>
+
+      {/* Settled bets history */}
+      {(() => {
+        const settledBets = bets?.filter((b) => b.settled) || [];
+        if (settledBets.length === 0) return null;
+        return (
+          <section>
+            <h2 className="text-base font-semibold text-foreground mb-4">Settled Bets</h2>
+            <div className="space-y-2">
+              {settledBets.map((bet) => {
+                const market = marketMap.get(bet.marketId);
+                const won = bet.payout !== null && bet.payout > 0;
+                return (
                   <div
-                    className="flex items-center justify-between p-4 rounded-xl border border-border bg-card hover:border-primary/20 transition-colors cursor-pointer"
-                    data-testid={`card-bet-${bet.id}`}
+                    key={bet.id}
+                    className={`flex items-center justify-between p-4 rounded-xl border bg-card/50 ${
+                      won ? "border-emerald-500/20" : "border-border"
+                    }`}
+                    data-testid={`card-settled-${bet.id}`}
                   >
                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <span className="text-lg">{market?.icon || "📊"}</span>
+                      <span className="text-lg opacity-60">{market?.icon || "📊"}</span>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">
+                        <p className="text-sm font-medium text-foreground/70 truncate">
                           {market?.title || "Unknown market"}
                         </p>
                         <p className="text-[11px] text-muted-foreground">
@@ -140,16 +217,16 @@ export default function Portfolio() {
                           const optionLabel = optionLabelMap.get(bet.position);
                           return (
                             <Badge
-                              className="text-[10px] px-2 py-0.5 font-semibold bg-violet-500/10 text-violet-400 border-violet-500/20 max-w-[140px] truncate"
+                              className="text-[10px] px-2 py-0.5 font-semibold bg-violet-500/10 text-violet-400/50 border-violet-500/10 max-w-[140px] truncate"
                               variant="outline"
                             >
-                              {optionLabel || "Loading..."}
+                              {optionLabel || bet.position}
                             </Badge>
                           );
                         }
                         return (
                           <Badge
-                            className={`text-[10px] px-2 py-0.5 font-semibold ${
+                            className={`text-[10px] px-2 py-0.5 font-semibold opacity-60 ${
                               bet.position === "yes"
                                 ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                                 : "bg-rose-500/10 text-rose-400 border-rose-500/20"
@@ -160,22 +237,23 @@ export default function Portfolio() {
                           </Badge>
                         );
                       })()}
-                      <span className="text-sm font-bold text-foreground tabular-nums">{formatKC(bet.amount)} KC</span>
+                      <div className="text-right">
+                        <span className="text-xs text-muted-foreground line-through tabular-nums">{formatKC(bet.amount)} KC</span>
+                        <div className={`flex items-center gap-1 text-sm font-bold tabular-nums ${
+                          won ? "text-emerald-400" : "text-rose-400"
+                        }`}>
+                          {won ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                          {won ? `+${formatKC(bet.payout!)}` : "0"} KC
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </Link>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-center py-8 rounded-xl border border-dashed border-border">
-            <p className="text-sm text-muted-foreground mb-2">No positions yet.</p>
-            <Link href="/markets">
-              <Button variant="outline" size="sm">Browse Markets</Button>
-            </Link>
-          </div>
-        )}
-      </section>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Transaction history */}
       <section>
