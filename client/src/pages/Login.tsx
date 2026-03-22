@@ -62,8 +62,8 @@ export default function Login() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username || !password || !displayName) {
-      toast({ title: "Fill in all fields", variant: "destructive" });
+    if (!password || !displayName) {
+      toast({ title: "Name and password are required", variant: "destructive" });
       return;
     }
     setLoading(true);
@@ -211,13 +211,8 @@ export default function Login() {
                     Email verified: <strong className="text-primary">{email}</strong>
                   </p>
                 </div>
-                <div className="rounded-lg bg-rose-500/5 border border-rose-500/15 p-3 mb-1">
-                  <p className="text-[11px] text-rose-300 leading-relaxed">
-                    <strong className="text-rose-400">Important:</strong> Your username and display name must be your real name (e.g. "John Smith"). Accounts that do not use a real name will be terminated.
-                  </p>
-                </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1.5 block">Display Name (your real name)</label>
+                  <label className="text-xs text-muted-foreground mb-1.5 block">Full Name</label>
                   <Input
                     placeholder="e.g. John Smith"
                     value={displayName}
@@ -226,9 +221,10 @@ export default function Login() {
                     data-testid="input-display-name"
                     autoFocus
                   />
+                  <p className="text-[11px] text-muted-foreground mt-1">Your real name — visible to admins</p>
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1.5 block">Username (your real name)</label>
+                  <label className="text-xs text-muted-foreground mb-1.5 block">Username <span className="text-muted-foreground/60">(optional)</span></label>
                   <Input
                     placeholder="e.g. john.smith"
                     value={username}
@@ -236,6 +232,7 @@ export default function Login() {
                     className="bg-card"
                     data-testid="input-username"
                   />
+                  <p className="text-[11px] text-muted-foreground mt-1">Optional — recommended if you want to remain pseudonymous. If blank, one will be generated from your name.</p>
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1.5 block">Password</label>

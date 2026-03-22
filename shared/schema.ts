@@ -57,6 +57,7 @@ export const markets = pgTable("markets", {
   resolvedBy: text("resolved_by"), // admin user id who resolved
   exclusiveMulti: boolean("exclusive_multi").notNull().default(true), // true = only one option can win (mutually exclusive), false = multiple options can resolve YES
   suggestedBy: text("suggested_by"), // display name of the user who suggested this market (null if not suggested or user opted out)
+  lmsrB: real("lmsr_b").default(100), // LMSR liquidity parameter (only for exclusive multi markets)
 });
 
 export const insertMarketSchema = createInsertSchema(markets).omit({
@@ -147,6 +148,7 @@ export const marketOptions = pgTable("market_options", {
   resolved: boolean("resolved").notNull().default(false),
   isWinner: boolean("is_winner").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
+  qValue: real("q_value").notNull().default(0), // LMSR state variable for this outcome
 });
 
 export const insertMarketOptionSchema = createInsertSchema(marketOptions).omit({

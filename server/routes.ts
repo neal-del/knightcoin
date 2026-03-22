@@ -4,6 +4,7 @@ import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import type { Market, MarketOption } from "@shared/schema";
+import { priceVector, tradeCost, sharesForCost, DEFAULT_LMSR_B, initializeQ } from "./lmsr";
 import { initBlockchain, getBlockchainConfig, getOnChainBalance, verifyTransaction, isBlockchainEnabled } from "./blockchain";
 import { Resend } from "resend";
 
@@ -325,10 +326,14 @@ export async function registerRoutes(
   // Step 2: Verify code and create account
   app.post("/api/auth/register", async (req, res) => {
     try {
-      const { email, code, username, password, displayName, rememberMe, referralCode } = req.body;
-      if (!email || !code || !username || !password || !displayName) {
-        return res.status(400).json({ error: "All fields are required" });
+      const { email, code, username: rawUsername, password, displayName, rememberMe, referralCode } = req.body;
+      if (!email || !code || !password || !displayName) {
+        return res.status(400).json({ error: "Email, verification code, name, and password are required" });
       }
+      // Username is optional — auto-generate from display name if blank
+      const username = (rawUsername && rawUsername.trim())
+        ? rawUsername.trim()
+        : displayName.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.|\.$/g, "");
       if (password.length < 6) {
         return res.status(400).json({ error: "Password must be at least 6 characters" });
       }
@@ -357,9 +362,15 @@ export async function registerRoutes(
       verificationCodes.delete(email.toLowerCase());
 
       // Check for existing username or email
-      const existingUser = await storage.getUserByUsername(username);
+      let finalUsername = username;
+      const existingUser = await storage.getUserByUsername(finalUsername);
       if (existingUser) {
-        return res.status(400).json({ error: "Username already taken" });
+        // If user explicitly chose this username, reject
+        if (rawUsername && rawUsername.trim()) {
+          return res.status(400).json({ error: "Username already taken" });
+        }
+        // Auto-generated: try adding random suffix
+        finalUsername = username + "." + randomBytes(2).toString("hex");
       }
       const existingEmail = await storage.getUserByEmail(email.toLowerCase());
       if (existingEmail) {
@@ -378,11 +389,11 @@ export async function registerRoutes(
       }
 
       // Generate unique referral code for new user
-      const userRefCode = username.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) + "-" + randomBytes(3).toString("hex").toUpperCase();
+      const userRefCode = finalUsername.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) + "-" + randomBytes(3).toString("hex").toUpperCase();
 
       const hashedPassword = await bcrypt.hash(password, 10);
       const user = await storage.createUser({
-        username,
+        username: finalUsername,
         password: hashedPassword,
         displayName,
         email: email.toLowerCase(),
@@ -574,6 +585,9 @@ export async function registerRoutes(
       const market = await storage.getMarket(marketId);
       if (!market) return res.status(404).json({ error: "Market not found" });
       if (market.resolved) return res.status(400).json({ error: "Market already resolved" });
+      if (new Date(market.closesAt) <= new Date()) {
+        return res.status(400).json({ error: "Betting is closed for this market" });
+      }
 
       const price = position === "yes" ? market.yesPrice : market.noPrice;
 
@@ -831,7 +845,7 @@ export async function registerRoutes(
   // --- Admin: Create Market ---
   app.post("/api/admin/markets", requireAdmin, async (req, res) => {
     try {
-      const { title, description, category, subcategory, closesAt, icon, featured, resolutionSource, resolutionData, yesPrice, noPrice, marketType, options, exclusiveMulti } = req.body;
+      const { title, description, category, subcategory, closesAt, icon, featured, resolutionSource, resolutionData, yesPrice, noPrice, marketType, options, exclusiveMulti, lmsrB } = req.body;
       if (!title || !description || !category || !closesAt) {
         return res.status(400).json({ error: "title, description, category, and closesAt are required" });
       }
@@ -862,17 +876,21 @@ export async function registerRoutes(
         resolutionSource: resolutionSource || "manual",
         resolutionData: resolutionData ? JSON.stringify(resolutionData) : null,
         exclusiveMulti: exclusiveMulti !== undefined ? !!exclusiveMulti : true,
+        lmsrB: lmsrB ? +lmsrB : DEFAULT_LMSR_B,
       });
 
       // Create options for multi-outcome / time-bracket markets
       if (mType !== "binary" && options && Array.isArray(options)) {
+        const isExclusive = exclusiveMulti !== undefined ? !!exclusiveMulti : true;
         const equalPrice = +(1 / options.length).toFixed(4);
+        const qInit = initializeQ(options.length);
         for (let i = 0; i < options.length; i++) {
           await storage.createMarketOption({
             marketId: market.id,
             label: options[i].label || options[i],
-            price: options[i].price || equalPrice,
+            price: isExclusive ? equalPrice : (options[i].price || equalPrice),
             sortOrder: i,
+            qValue: qInit[i],
           });
         }
       }
@@ -888,7 +906,7 @@ export async function registerRoutes(
     const market = await storage.getMarket(req.params.id);
     if (!market) return res.status(404).json({ error: "Market not found" });
 
-    const allowed = ["title", "description", "category", "subcategory", "closesAt", "icon", "featured", "resolutionSource", "resolutionData", "yesPrice", "noPrice", "marketType", "exclusiveMulti"];
+    const allowed = ["title", "description", "category", "subcategory", "closesAt", "icon", "featured", "resolutionSource", "resolutionData", "yesPrice", "noPrice", "marketType", "exclusiveMulti", "lmsrB"];
     const updates: any = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
@@ -1137,6 +1155,39 @@ export async function registerRoutes(
   });
 
   // ═══════════════════════════════════════════
+  // LMSR TRADE QUOTE (for UI payout estimates)
+  // ═══════════════════════════════════════════
+
+  app.post("/api/markets/:id/quote", async (req, res) => {
+    try {
+      const { optionId, amount } = req.body;
+      if (!optionId || !amount || amount <= 0) {
+        return res.status(400).json({ error: "optionId and amount are required" });
+      }
+      const market = await storage.getMarket(req.params.id);
+      if (!market) return res.status(404).json({ error: "Market not found" });
+
+      const allOptions = await storage.getMarketOptions(req.params.id);
+      const selectedIdx = allOptions.findIndex((o) => o.id === optionId);
+      if (selectedIdx < 0) return res.status(400).json({ error: "Invalid option" });
+
+      if (market.exclusiveMulti !== false) {
+        const b = market.lmsrB ?? DEFAULT_LMSR_B;
+        const q = allOptions.map((o) => o.qValue ?? 0);
+        const shares = sharesForCost(q, b, selectedIdx, amount);
+        const avgPrice = shares > 0 ? amount / shares : allOptions[selectedIdx].price;
+        res.json({ shares: +shares.toFixed(4), avgPrice: +avgPrice.toFixed(6), cost: amount });
+      } else {
+        const price = allOptions[selectedIdx].price;
+        const shares = amount / price;
+        res.json({ shares: +shares.toFixed(4), avgPrice: price, cost: amount });
+      }
+    } catch (err) {
+      res.status(500).json({ error: "Failed to get quote" });
+    }
+  });
+
+  // ═══════════════════════════════════════════
   // MULTI-OUTCOME BETTING
   // ═══════════════════════════════════════════
 
@@ -1160,52 +1211,66 @@ export async function registerRoutes(
       const market = await storage.getMarket(marketId);
       if (!market) return res.status(404).json({ error: "Market not found" });
       if (market.resolved) return res.status(400).json({ error: "Market already resolved" });
+      if (new Date(market.closesAt) <= new Date()) {
+        return res.status(400).json({ error: "Betting is closed for this market" });
+      }
 
       const option = await storage.getMarketOption(optionId);
       if (!option || option.marketId !== marketId) {
         return res.status(400).json({ error: "Invalid option for this market" });
       }
 
-      // Create the bet — position stores the optionId
+      const allOptions = await storage.getMarketOptions(marketId);
+      const selectedIdx = allOptions.findIndex((o) => o.id === optionId);
+      if (selectedIdx < 0) {
+        return res.status(400).json({ error: "Option not found in market" });
+      }
+
+      let executionPrice: number;
+      let sharesReceived: number;
+
+      if (market.exclusiveMulti !== false) {
+        // ═══════ LMSR AMM for mutually exclusive markets ═══════
+        const b = market.lmsrB ?? DEFAULT_LMSR_B;
+        const q = allOptions.map((o) => o.qValue ?? 0);
+
+        // Compute how many shares the user gets for their KC
+        sharesReceived = sharesForCost(q, b, selectedIdx, amount);
+        executionPrice = sharesReceived > 0 ? amount / sharesReceived : option.price;
+
+        // Update q vector
+        const newQ = q.map((qi, i) => (i === selectedIdx ? qi + sharesReceived : qi));
+        const newPrices = priceVector(newQ, b);
+
+        // Persist updated q values and prices for all options
+        for (let i = 0; i < allOptions.length; i++) {
+          await storage.updateMarketOption(allOptions[i].id, {
+            price: +newPrices[i].toFixed(6),
+            qValue: +newQ[i].toFixed(6),
+          });
+        }
+      } else {
+        // ═══════ Non-exclusive: independent pricing (legacy) ═══════
+        const impact = Math.min(amount / 1000, 0.05);
+        const newPrice = Math.min(0.95, allOptions[selectedIdx].price + impact);
+        await storage.updateMarketOption(allOptions[selectedIdx].id, { price: +newPrice.toFixed(4) });
+        executionPrice = option.price;
+        sharesReceived = amount / executionPrice;
+      }
+
+      // Create the bet — position stores the optionId, price is execution price
       const bet = await storage.createBet({
         userId,
         marketId,
         position: optionId,
         amount,
-        price: option.price,
+        price: +executionPrice.toFixed(6),
         createdAt: new Date().toISOString(),
       });
 
       // Deduct balance
       await storage.updateUserBalance(userId, -amount);
       await storage.updateUserStats(userId, { totalBets: user.totalBets + 1 });
-
-      // Update option prices based on market type
-      const allOptions = await storage.getMarketOptions(marketId);
-      const impact = Math.min(amount / 1000, 0.05);
-      const selectedIdx = allOptions.findIndex((o) => o.id === optionId);
-      if (selectedIdx >= 0) {
-        const newPrice = Math.min(0.95, allOptions[selectedIdx].price + impact);
-
-        if (market.exclusiveMulti === false) {
-          // Non-exclusive: each option is independent (like binary bets)
-          // Only the selected option's price changes; others stay the same
-          await storage.updateMarketOption(allOptions[selectedIdx].id, { price: +newPrice.toFixed(4) });
-        } else {
-          // Mutually exclusive: prices must sum to 1
-          const remaining = 1 - newPrice;
-          const othersTotal = allOptions.reduce((s, o, i) => i === selectedIdx ? s : s + o.price, 0);
-          for (let i = 0; i < allOptions.length; i++) {
-            if (i === selectedIdx) {
-              await storage.updateMarketOption(allOptions[i].id, { price: +newPrice.toFixed(4) });
-            } else {
-              const ratio = othersTotal > 0 ? allOptions[i].price / othersTotal : 1 / (allOptions.length - 1);
-              const adjusted = Math.max(0.01, +(remaining * ratio).toFixed(4));
-              await storage.updateMarketOption(allOptions[i].id, { price: adjusted });
-            }
-          }
-        }
-      }
 
       // Update market volume/totalBets
       await storage.updateMarketPrice(marketId, market.yesPrice, market.noPrice, amount);

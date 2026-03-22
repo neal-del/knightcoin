@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth";
 import { formatKC } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -33,6 +33,8 @@ export default function MarketDetail() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [placing, setPlacing] = useState(false);
+  const [quoteShares, setQuoteShares] = useState<number | null>(null);
+  const quoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: market, isLoading } = useQuery<Market>({
     queryKey: ["/api/markets", params?.id],
@@ -40,11 +42,33 @@ export default function MarketDetail() {
   });
 
   const isMulti = market?.marketType === "multi_outcome" || market?.marketType === "time_bracket";
+  const isExclusiveMulti = isMulti && market?.exclusiveMulti !== false;
 
   const { data: options } = useQuery<MarketOption[]>({
     queryKey: ["/api/markets", params?.id, "options"],
     enabled: !!params?.id && isMulti,
   });
+
+  // Fetch LMSR quote for multi-option exclusive markets
+  useEffect(() => {
+    if (!isExclusiveMulti || !selectedOption || !amount || !params?.id) {
+      setQuoteShares(null);
+      return;
+    }
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0) { setQuoteShares(null); return; }
+
+    if (quoteTimer.current) clearTimeout(quoteTimer.current);
+    quoteTimer.current = setTimeout(async () => {
+      try {
+        const res = await apiRequest("POST", `/api/markets/${params.id}/quote`, { optionId: selectedOption, amount: amt });
+        const data = await res.json();
+        setQuoteShares(data.shares);
+      } catch { setQuoteShares(null); }
+    }, 300);
+
+    return () => { if (quoteTimer.current) clearTimeout(quoteTimer.current); };
+  }, [isExclusiveMulti, selectedOption, amount, params?.id]);
 
   const handlePlaceBet = async () => {
     if (!user) {
@@ -131,8 +155,11 @@ export default function MarketDetail() {
   const noPercent = Math.round(market.noPrice * 100);
   const selectedOpt = options?.find((o) => o.id === selectedOption);
   const selectedPrice = isMulti ? (selectedOpt?.price || 0.5) : (position === "yes" ? market.yesPrice : market.noPrice);
-  const potentialPayout = amount ? (parseFloat(amount) / selectedPrice).toFixed(2) : "0";
+  // Use LMSR quote for exclusive multi, else simple division
+  const rawPayout = (isExclusiveMulti && quoteShares != null) ? quoteShares : (amount ? parseFloat(amount) / selectedPrice : 0);
+  const potentialPayout = rawPayout.toFixed(2);
   const isSchool = ["sports", "academic", "social", "campus", "admin"].includes(market.category);
+  const isClosed = market.resolved || new Date(market.closesAt) <= new Date();
 
   return (
     <div className="px-4 md:px-8 py-6 max-w-[900px] mx-auto space-y-6">
@@ -262,6 +289,16 @@ export default function MarketDetail() {
         {/* Right — Trading panel */}
         <div className="lg:sticky lg:top-6 h-fit">
           <div className="rounded-xl border border-border bg-card p-5 space-y-5">
+            {isClosed ? (
+              <div className="text-center py-6 space-y-2">
+                <div className="text-2xl">🔒</div>
+                <h3 className="text-sm font-semibold text-foreground">{market.resolved ? "Market Resolved" : "Betting Closed"}</h3>
+                <p className="text-xs text-muted-foreground">
+                  {market.resolved ? "This market has been resolved." : "The deadline for this market has passed. No more bets can be placed."}
+                </p>
+              </div>
+            ) : (
+              <>
             <h3 className="text-sm font-semibold text-foreground">Place a Trade</h3>
 
             {/* Position toggle / option selector */}
@@ -376,6 +413,8 @@ export default function MarketDetail() {
                 </Link>
                 {" "}to place trades
               </p>
+            )}
+              </>
             )}
           </div>
         </div>

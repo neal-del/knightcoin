@@ -221,6 +221,14 @@ export async function runMigrations() {
       ALTER TABLE mailbox_messages ADD COLUMN IF NOT EXISTS deleted_at TEXT;
     `);
 
+    // ── LMSR: Add q_value to market_options and lmsr_b to markets ──
+    await pool.query(`
+      ALTER TABLE market_options ADD COLUMN IF NOT EXISTS q_value REAL NOT NULL DEFAULT 0;
+    `);
+    await pool.query(`
+      ALTER TABLE markets ADD COLUMN IF NOT EXISTS lmsr_b REAL DEFAULT 100;
+    `);
+
     console.log("[migrate] Tables verified/created successfully.");
   } catch (err) {
     console.error("[migrate] Migration failed:", err);

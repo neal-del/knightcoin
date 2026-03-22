@@ -199,6 +199,8 @@ export class MemStorage implements IStorage {
         resolvedAt: null,
         resolvedBy: null,
         exclusiveMulti: true,
+        suggestedBy: null,
+        lmsrB: 100,
       },
       {
         title: "Will Menlo's baseball team make CCS playoffs?",
@@ -222,6 +224,8 @@ export class MemStorage implements IStorage {
         resolvedAt: null,
         resolvedBy: null,
         exclusiveMulti: true,
+        suggestedBy: null,
+        lmsrB: 100,
       },
       {
         title: "Will the AP Physics 2 class average be above 4?",
@@ -245,6 +249,8 @@ export class MemStorage implements IStorage {
         resolvedAt: null,
         resolvedBy: null,
         exclusiveMulti: true,
+        suggestedBy: null,
+        lmsrB: 100,
       },
       {
         title: "Who wins the spring talent show — vocal or instrumental?",
@@ -268,6 +274,8 @@ export class MemStorage implements IStorage {
         resolvedAt: null,
         resolvedBy: null,
         exclusiveMulti: true,
+        suggestedBy: null,
+        lmsrB: 100,
       },
       {
         title: "Will the new schedule proposal pass for next year?",
@@ -291,6 +299,8 @@ export class MemStorage implements IStorage {
         resolvedAt: null,
         resolvedBy: null,
         exclusiveMulti: true,
+        suggestedBy: null,
+        lmsrB: 100,
       },
       // Macro markets — with auto-resolution
       {
@@ -315,6 +325,8 @@ export class MemStorage implements IStorage {
         resolvedAt: null,
         resolvedBy: null,
         exclusiveMulti: true,
+        suggestedBy: null,
+        lmsrB: 100,
       },
       {
         title: "Will Tesla stock close above $300 by end of Q2 2026?",
@@ -338,6 +350,8 @@ export class MemStorage implements IStorage {
         resolvedAt: null,
         resolvedBy: null,
         exclusiveMulti: true,
+        suggestedBy: null,
+        lmsrB: 100,
       },
       {
         title: "Will the Warriors make the 2026 NBA playoffs?",
@@ -361,6 +375,8 @@ export class MemStorage implements IStorage {
         resolvedAt: null,
         resolvedBy: null,
         exclusiveMulti: true,
+        suggestedBy: null,
+        lmsrB: 100,
       },
       {
         title: "Will Bitcoin hit $150k before end of 2026?",
@@ -384,6 +400,8 @@ export class MemStorage implements IStorage {
         resolvedAt: null,
         resolvedBy: null,
         exclusiveMulti: true,
+        suggestedBy: null,
+        lmsrB: 100,
       },
       {
         title: "Will OpenAI release GPT-5 before July 2026?",
@@ -407,6 +425,8 @@ export class MemStorage implements IStorage {
         resolvedAt: null,
         resolvedBy: null,
         exclusiveMulti: true,
+        suggestedBy: null,
+        lmsrB: 100,
       },
       {
         title: "Will the 49ers win the NFC West in the 2026 season?",
@@ -430,6 +450,8 @@ export class MemStorage implements IStorage {
         resolvedAt: null,
         resolvedBy: null,
         exclusiveMulti: true,
+        suggestedBy: null,
+        lmsrB: 100,
       },
     ];
 
@@ -697,7 +719,7 @@ export class MemStorage implements IStorage {
 
   async createTransaction(insertTx: InsertTransaction): Promise<Transaction> {
     const id = randomUUID();
-    const tx: Transaction = { id, ...insertTx };
+    const tx: Transaction = { id, ...insertTx, txHash: insertTx.txHash ?? null };
     this.transactions.set(id, tx);
     return tx;
   }
@@ -713,6 +735,7 @@ export class MemStorage implements IStorage {
     const mr: MarketRequest = {
       id,
       ...req,
+      showName: req.showName ?? false,
       status: "pending",
       adminNote: null,
       reviewedAt: null,
@@ -758,7 +781,11 @@ export class MemStorage implements IStorage {
     const id = randomUUID();
     const option: MarketOption = {
       id,
-      ...opt,
+      marketId: opt.marketId,
+      label: opt.label,
+      price: opt.price ?? 0.5,
+      sortOrder: opt.sortOrder ?? 0,
+      qValue: opt.qValue ?? 0,
       resolved: false,
       isWinner: false,
     };

@@ -269,6 +269,7 @@ export default function AdminUsers() {
                   <thead>
                     <tr className="border-b border-border bg-muted/20">
                       <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-4 py-3">User</th>
+                      <th className="text-left text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-4 py-3 hidden md:table-cell">Email</th>
                       <th className="text-right text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-4 py-3">Balance</th>
                       <th className="text-right text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-4 py-3 hidden sm:table-cell">Bets</th>
                       <th className="text-right text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-4 py-3 hidden sm:table-cell">Winnings</th>
@@ -430,10 +431,13 @@ function UserRow({
                 )}
               </div>
               <div className="text-[11px] text-muted-foreground">
-                @{u.username}{u.email ? ` · ${u.email}` : ""}
+                @{u.username}
               </div>
             </div>
           </div>
+        </td>
+        <td className="px-4 py-3 hidden md:table-cell">
+          <span className="text-xs text-muted-foreground">{u.email || "—"}</span>
         </td>
         <td className="px-4 py-3 text-right">
           <span className="font-bold text-primary tabular-nums">{formatKC(u.balance)} KC</span>
@@ -470,7 +474,7 @@ function UserRow({
       {/* Delete confirmation */}
       {isDeleteTarget && (
         <tr key={`delete-${u.id}`}>
-          <td colSpan={5} className="px-4 py-3 bg-rose-500/5 border-b border-rose-500/20">
+          <td colSpan={6} className="px-4 py-3 bg-rose-500/5 border-b border-rose-500/20">
             <div className="flex items-center gap-3 flex-wrap">
               <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
               <span className="text-xs text-rose-300 flex-1">
@@ -505,7 +509,7 @@ function UserRow({
       {/* Adjust balance */}
       {adjustUserId === u.id && (
         <tr key={`adjust-${u.id}`}>
-          <td colSpan={5} className="px-4 py-3 bg-muted/10">
+          <td colSpan={6} className="px-4 py-3 bg-muted/10">
             <div className="flex items-end gap-3 flex-wrap">
               <div className="w-28">
                 <label className="text-[10px] text-muted-foreground mb-1 block">Amount (+ or -)</label>
