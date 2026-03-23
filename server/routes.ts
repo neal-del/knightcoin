@@ -350,8 +350,23 @@ export async function registerRoutes(
         });
       }
 
-      // Verify the code
-      const stored = verificationCodes.get(email.toLowerCase());
+      // Verify the code — check in-memory first, then fall back to DB
+      let stored = verificationCodes.get(email.toLowerCase());
+      if (!stored || stored.code !== code) {
+        // Try database fallback (in case server restarted since code was sent)
+        const pool = await getDbPool();
+        if (pool) {
+          try {
+            const { rows } = await pool.query(
+              "SELECT code, expires_at FROM email_verification_codes WHERE email = $1 AND used = false ORDER BY created_at DESC LIMIT 1",
+              [email.toLowerCase()]
+            );
+            if (rows.length > 0 && rows[0].code === code) {
+              stored = { code: rows[0].code, expiresAt: rows[0].expires_at };
+            }
+          } catch (e) { /* DB error — fall through */ }
+        }
+      }
       if (!stored || stored.code !== code) {
         return res.status(400).json({ error: "Invalid verification code" });
       }
@@ -360,6 +375,11 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Verification code expired. Request a new one." });
       }
       verificationCodes.delete(email.toLowerCase());
+      // Mark code as used in DB
+      const pool2 = await getDbPool();
+      if (pool2) {
+        try { await pool2.query("UPDATE email_verification_codes SET used = true WHERE email = $1 AND code = $2", [email.toLowerCase(), code]); } catch (e) {}
+      }
 
       // Check for existing username or email
       let finalUsername = username;
