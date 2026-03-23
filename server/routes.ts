@@ -28,7 +28,7 @@ async function sendVerificationEmail(email: string, code: string): Promise<boole
   }
   try {
     await resend.emails.send({
-      from: 'The Knight Market <noreply@send.rgoel.com>',
+      from: 'The Knight Market <noreply@rgoel.com>',
       to: [email],
       subject: 'Your Knight Market Verification Code',
       html: `
@@ -56,7 +56,7 @@ async function sendPermissionRequestEmail(terminatedEmail: string): Promise<bool
   }
   try {
     await resend.emails.send({
-      from: 'The Knight Market <noreply@send.rgoel.com>',
+      from: 'The Knight Market <noreply@rgoel.com>',
       to: ['neal@rgoel.com'],
       subject: `Re-registration Request: ${terminatedEmail}`,
       html: `
