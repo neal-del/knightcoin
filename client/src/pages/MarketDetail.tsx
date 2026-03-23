@@ -212,6 +212,17 @@ export default function MarketDetail() {
             <div className="space-y-2">
               {[...options].sort((a, b) => b.price - a.price).map((opt, i) => {
                 const pct = Math.round(opt.price * 100);
+                const isEliminated = opt.resolved && !opt.isWinner;
+                if (isEliminated) {
+                  return (
+                    <div key={opt.id} className="rounded-xl border border-border/30 p-3 opacity-40" data-testid={`option-price-${opt.id}`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-muted-foreground line-through">{opt.label}</span>
+                        <span className="text-xs text-rose-400 font-semibold">ELIMINATED</span>
+                      </div>
+                    </div>
+                  );
+                }
                 const color = OPTION_COLORS[i % OPTION_COLORS.length];
                 return (
                   <div key={opt.id} className={`rounded-xl border p-3 ${color}`} data-testid={`option-price-${opt.id}`}>
@@ -308,6 +319,18 @@ export default function MarketDetail() {
                 {[...options].sort((a, b) => b.price - a.price).map((opt, i) => {
                   const pct = Math.round(opt.price * 100);
                   const isSelected = selectedOption === opt.id;
+                  const isEliminated = opt.resolved && !opt.isWinner;
+                  if (isEliminated) {
+                    return (
+                      <div
+                        key={opt.id}
+                        className="w-full py-2.5 px-3 rounded-lg text-sm text-left flex items-center justify-between bg-muted/10 border border-transparent opacity-50"
+                      >
+                        <span className="line-through text-muted-foreground">{opt.label}</span>
+                        <span className="text-[10px] text-rose-400 font-medium">ELIMINATED</span>
+                      </div>
+                    );
+                  }
                   return (
                     <button
                       key={opt.id}

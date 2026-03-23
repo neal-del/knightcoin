@@ -4,7 +4,7 @@ import { randomBytes } from "crypto";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage";
 import type { Market, MarketOption } from "@shared/schema";
-import { priceVector, tradeCost, sharesForCost, DEFAULT_LMSR_B, initializeQ } from "./lmsr";
+import { priceVector, tradeCost, sharesForCost, DEFAULT_LMSR_B, initializeQ, priceVectorWithEliminated, tradeCostWithEliminated, sharesForCostWithEliminated } from "./lmsr";
 import { initBlockchain, getBlockchainConfig, getOnChainBalance, verifyTransaction, isBlockchainEnabled } from "./blockchain";
 import { Resend } from "resend";
 
@@ -1191,10 +1191,15 @@ export async function registerRoutes(
       const selectedIdx = allOptions.findIndex((o) => o.id === optionId);
       if (selectedIdx < 0) return res.status(400).json({ error: "Invalid option" });
 
+      if (allOptions[selectedIdx].resolved) {
+        return res.status(400).json({ error: "This option has been eliminated" });
+      }
+
       if (market.exclusiveMulti !== false) {
         const b = market.lmsrB ?? DEFAULT_LMSR_B;
         const q = allOptions.map((o) => o.qValue ?? 0);
-        const shares = sharesForCost(q, b, selectedIdx, amount);
+        const eliminatedFlags = allOptions.map((o) => o.resolved);
+        const shares = sharesForCostWithEliminated(q, b, selectedIdx, amount, eliminatedFlags);
         const avgPrice = shares > 0 ? amount / shares : allOptions[selectedIdx].price;
         res.json({ shares: +shares.toFixed(4), avgPrice: +avgPrice.toFixed(6), cost: amount });
       } else {
@@ -1239,6 +1244,9 @@ export async function registerRoutes(
       if (!option || option.marketId !== marketId) {
         return res.status(400).json({ error: "Invalid option for this market" });
       }
+      if (option.resolved) {
+        return res.status(400).json({ error: "This option has been eliminated" });
+      }
 
       const allOptions = await storage.getMarketOptions(marketId);
       const selectedIdx = allOptions.findIndex((o) => o.id === optionId);
@@ -1253,21 +1261,24 @@ export async function registerRoutes(
         // ═══════ LMSR AMM for mutually exclusive markets ═══════
         const b = market.lmsrB ?? DEFAULT_LMSR_B;
         const q = allOptions.map((o) => o.qValue ?? 0);
+        const eliminatedFlags = allOptions.map((o) => o.resolved);
 
-        // Compute how many shares the user gets for their KC
-        sharesReceived = sharesForCost(q, b, selectedIdx, amount);
+        // Compute how many shares the user gets for their KC (skip eliminated)
+        sharesReceived = sharesForCostWithEliminated(q, b, selectedIdx, amount, eliminatedFlags);
         executionPrice = sharesReceived > 0 ? amount / sharesReceived : option.price;
 
         // Update q vector
         const newQ = q.map((qi, i) => (i === selectedIdx ? qi + sharesReceived : qi));
-        const newPrices = priceVector(newQ, b);
+        const newPrices = priceVectorWithEliminated(newQ, b, eliminatedFlags);
 
-        // Persist updated q values and prices for all options
+        // Persist updated q values and prices for active options only
         for (let i = 0; i < allOptions.length; i++) {
-          await storage.updateMarketOption(allOptions[i].id, {
-            price: +newPrices[i].toFixed(6),
-            qValue: +newQ[i].toFixed(6),
-          });
+          if (!allOptions[i].resolved) {
+            await storage.updateMarketOption(allOptions[i].id, {
+              price: +newPrices[i].toFixed(6),
+              qValue: +newQ[i].toFixed(6),
+            });
+          }
         }
       } else {
         // ═══════ Non-exclusive: independent pricing (legacy) ═══════
@@ -1317,6 +1328,118 @@ export async function registerRoutes(
       res.json(bet);
     } catch (err) {
       res.status(500).json({ error: "Failed to place bet" });
+    }
+  });
+
+  // ═══════════════════════════════════════════
+  // ADMIN: ELIMINATE OPTION (resolve to NO early)
+  // ═══════════════════════════════════════════
+
+  app.post("/api/admin/markets/:id/eliminate-option", requireAdmin, async (req, res) => {
+    try {
+      const { optionId } = req.body;
+      if (!optionId) return res.status(400).json({ error: "optionId is required" });
+
+      const market = await storage.getMarket(req.params.id);
+      if (!market) return res.status(404).json({ error: "Market not found" });
+      if (market.resolved) return res.status(400).json({ error: "Market already fully resolved" });
+      if (!market.exclusiveMulti) return res.status(400).json({ error: "Early elimination only applies to mutually exclusive markets" });
+
+      const allOptions = await storage.getMarketOptions(req.params.id);
+      const target = allOptions.find((o) => o.id === optionId);
+      if (!target) return res.status(400).json({ error: "Option not found" });
+      if (target.resolved) return res.status(400).json({ error: "Option already resolved" });
+
+      // Check we're not eliminating the last active option
+      const activeOptions = allOptions.filter((o) => !o.resolved);
+      if (activeOptions.length <= 2) {
+        return res.status(400).json({ error: "Cannot eliminate — need at least 2 active options. Use full market resolution instead." });
+      }
+
+      // 1. Mark the option as resolved + not winner (eliminated)
+      await storage.updateMarketOption(optionId, {
+        resolved: true,
+        isWinner: false,
+        price: 0,
+        qValue: 0,
+      });
+
+      // 2. Recalculate LMSR prices for remaining active options
+      const b = market.lmsrB ?? DEFAULT_LMSR_B;
+      const updatedOptions = await storage.getMarketOptions(req.params.id);
+      const q = updatedOptions.map((o) => o.qValue ?? 0);
+      const eliminated = updatedOptions.map((o) => o.resolved);
+      const newPrices = priceVectorWithEliminated(q, b, eliminated);
+
+      for (let i = 0; i < updatedOptions.length; i++) {
+        if (!updatedOptions[i].resolved) {
+          await storage.updateMarketOption(updatedOptions[i].id, {
+            price: +newPrices[i].toFixed(6),
+          });
+        }
+      }
+
+      // 3. Settle bets on the eliminated option (all lose)
+      const unsettledBets = await storage.getUnsettledBetsByMarket(req.params.id);
+      const eliminatedBets = unsettledBets.filter((b) => b.position === optionId);
+      for (const bet of eliminatedBets) {
+        await storage.settleBet(bet.id, 0);
+        await storage.createTransaction({
+          userId: bet.userId,
+          type: "bet_lost",
+          amount: 0,
+          description: `Lost ${bet.amount.toFixed(1)} KC — "${target.label}" eliminated`,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      // 4. If only 1 active option left, auto-resolve the whole market
+      const remainingActive = updatedOptions.filter((o) => !o.resolved);
+      if (remainingActive.length === 1) {
+        // Last one standing wins
+        const winner = remainingActive[0];
+        await storage.updateMarketOption(winner.id, {
+          resolved: true,
+          isWinner: true,
+          price: 1,
+        });
+        const adminUser = (req as any).adminUser;
+        await storage.resolveMarket(req.params.id, true, adminUser.id);
+
+        // Settle remaining bets
+        const remainingBets = await storage.getUnsettledBetsByMarket(req.params.id);
+        for (const bet of remainingBets) {
+          if (bet.position === winner.id) {
+            const payout = bet.amount / bet.price;
+            await storage.settleBet(bet.id, payout);
+            await storage.updateUserBalance(bet.userId, payout);
+            const betUser = await storage.getUser(bet.userId);
+            if (betUser) {
+              await storage.updateUserStats(bet.userId, {
+                totalWinnings: betUser.totalWinnings + payout,
+                correctPredictions: betUser.correctPredictions + 1,
+              });
+            }
+            await storage.createTransaction({
+              userId: bet.userId,
+              type: "payout",
+              amount: payout,
+              description: `Won ${payout.toFixed(1)} KC — "${winner.label}" wins (last standing)`,
+              createdAt: new Date().toISOString(),
+            });
+          }
+        }
+      }
+
+      res.json({
+        ok: true,
+        eliminated: target.label,
+        settledBets: eliminatedBets.length,
+        autoResolved: remainingActive.length === 1,
+      });
+    } catch (err) {
+      console.error("Eliminate option error:", err);
+      res.status(500).json({ error: "Failed to eliminate option" });
     }
   });
 

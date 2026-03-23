@@ -119,6 +119,7 @@ function MultiOptionResolver({ market, resolving, setResolving }: {
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
   const [selectedWinners, setSelectedWinners] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState(false);
+  const [eliminating, setEliminating] = useState<string | null>(null);
 
   const isExclusive = market.exclusiveMulti !== false;
 
@@ -140,6 +141,30 @@ function MultiOptionResolver({ market, resolving, setResolving }: {
       }
       return next;
     });
+  };
+
+  const eliminateOption = async (optionId: string) => {
+    const opt = options?.find((o) => o.id === optionId);
+    if (!opt) return;
+    if (!confirm(`Eliminate "${opt.label}"? All bets on this option will be settled as losses.`)) return;
+
+    setEliminating(optionId);
+    try {
+      const res = await apiRequest("POST", `/api/admin/markets/${market.id}/eliminate-option`, { optionId });
+      const data = await res.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/markets", market.id, "options"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/markets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/markets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leaderboard"] });
+      toast({
+        title: `Eliminated: ${data.eliminated}`,
+        description: `${data.settledBets} bet${data.settledBets !== 1 ? "s" : ""} settled${data.autoResolved ? " — market auto-resolved (last option wins)" : ""}`,
+      });
+    } catch (err: any) {
+      toast({ title: "Elimination failed", description: err?.message || "Something went wrong", variant: "destructive" });
+    } finally {
+      setEliminating(null);
+    }
   };
 
   const resolveWithWinner = async () => {
@@ -205,6 +230,9 @@ function MultiOptionResolver({ market, resolving, setResolving }: {
     return `Resolve ${labels.length} winner${labels.length > 1 ? "s" : ""}: ${labels.join(", ")}`;
   };
 
+  const activeOptions = options?.filter((o) => !o.resolved) || [];
+  const eliminatedOptions = options?.filter((o) => o.resolved) || [];
+
   return (
     <div className="space-y-3 w-full">
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
@@ -215,44 +243,79 @@ function MultiOptionResolver({ market, resolving, setResolving }: {
           This is a non-mutually-exclusive market. You can resolve multiple options as winners.
         </p>
       )}
+      {isExclusive && eliminatedOptions.length > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          {eliminatedOptions.length} option{eliminatedOptions.length > 1 ? "s" : ""} eliminated · {activeOptions.length} remaining
+        </p>
+      )}
+
+      {/* Active options */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
-        {visibleOptions.map((opt) => {
+        {(expanded ? activeOptions : activeOptions.slice(0, 5)).map((opt) => {
           const isSelected = isExclusive
             ? opt.id === selectedWinner
             : selectedWinners.has(opt.id);
 
           return (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => {
-                if (isExclusive) {
-                  setSelectedWinner(opt.id === selectedWinner ? null : opt.id);
-                } else {
-                  toggleWinner(opt.id);
-                }
-              }}
-              disabled={resolving === market.id}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-left transition-all text-xs ${
-                isSelected
-                  ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/30"
-                  : "border-border bg-card/50 text-foreground hover:border-primary/30 hover:bg-primary/5"
-              }`}
-              data-testid={`option-resolve-${opt.id}`}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                {isSelected && <Trophy className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
-                <span className="truncate font-medium">{opt.label}</span>
-              </div>
-              <span className="text-[10px] tabular-nums text-muted-foreground shrink-0 ml-2">
-                {Math.round(opt.price * 100)}¢
-              </span>
-            </button>
+            <div key={opt.id} className="flex items-stretch gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isExclusive) {
+                    setSelectedWinner(opt.id === selectedWinner ? null : opt.id);
+                  } else {
+                    toggleWinner(opt.id);
+                  }
+                }}
+                disabled={resolving === market.id}
+                className={`flex-1 flex items-center justify-between px-3 py-2.5 rounded-lg border text-left transition-all text-xs ${
+                  isSelected
+                    ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/30"
+                    : "border-border bg-card/50 text-foreground hover:border-primary/30 hover:bg-primary/5"
+                }`}
+                data-testid={`option-resolve-${opt.id}`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  {isSelected && <Trophy className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                  <span className="truncate font-medium">{opt.label}</span>
+                </div>
+                <span className="text-[10px] tabular-nums text-muted-foreground shrink-0 ml-2">
+                  {Math.round(opt.price * 100)}¢
+                </span>
+              </button>
+              {isExclusive && activeOptions.length > 2 && (
+                <button
+                  type="button"
+                  onClick={() => eliminateOption(opt.id)}
+                  disabled={eliminating === opt.id || resolving === market.id}
+                  className="px-2 rounded-lg border border-rose-500/30 bg-rose-500/5 text-rose-400 hover:bg-rose-500/15 transition-colors text-[10px] shrink-0"
+                  title={`Eliminate "${opt.label}"`}
+                  data-testid={`option-eliminate-${opt.id}`}
+                >
+                  {eliminating === opt.id ? "…" : <XCircle className="w-3.5 h-3.5" />}
+                </button>
+              )}
+            </div>
           );
         })}
       </div>
 
-      {hasMore && (
+      {/* Eliminated options (collapsed) */}
+      {isExclusive && eliminatedOptions.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">Eliminated</div>
+          <div className="flex flex-wrap gap-1.5">
+            {eliminatedOptions.map((opt) => (
+              <span key={opt.id} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-muted/20 text-[11px] text-muted-foreground/50 line-through">
+                <XCircle className="w-3 h-3" />
+                {opt.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeOptions.length > 5 && (
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
@@ -261,7 +324,7 @@ function MultiOptionResolver({ market, resolving, setResolving }: {
           {expanded ? (
             <><ChevronUp className="w-3 h-3" /> Show fewer</>
           ) : (
-            <><ChevronDown className="w-3 h-3" /> Show all {options.length} options</>
+            <><ChevronDown className="w-3 h-3" /> Show all {activeOptions.length} options</>
           )}
         </button>
       )}

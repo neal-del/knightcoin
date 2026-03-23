@@ -108,3 +108,87 @@ export const DEFAULT_LMSR_B = 100;
 export function initializeQ(numOptions: number): number[] {
   return new Array(numOptions).fill(0);
 }
+
+/**
+ * Compute prices for active options only (eliminated options get price 0).
+ * Eliminated options are marked by having `eliminated: true`.
+ * Active options' prices are recomputed from their q values and sum to 1.
+ */
+export function priceVectorWithEliminated(
+  q: number[],
+  b: number,
+  eliminated: boolean[]
+): number[] {
+  const activeIndices = q.map((_, i) => i).filter((i) => !eliminated[i]);
+  if (activeIndices.length === 0) return q.map(() => 0);
+  if (activeIndices.length === 1) {
+    return q.map((_, i) => (activeIndices.includes(i) ? 1 : 0));
+  }
+
+  // Compute softmax only over active options
+  const activeQ = activeIndices.map((i) => q[i]);
+  const maxQ = Math.max(...activeQ);
+  const exps = activeQ.map((qi) => Math.exp((qi - maxQ) / b));
+  const sumExp = exps.reduce((acc, e) => acc + e, 0);
+
+  const prices = new Array(q.length).fill(0);
+  activeIndices.forEach((origIdx, j) => {
+    prices[origIdx] = exps[j] / sumExp;
+  });
+  return prices;
+}
+
+/**
+ * Compute trade cost considering eliminated options.
+ * Only active (non-eliminated) options participate in the cost function.
+ */
+export function tradeCostWithEliminated(
+  q: number[],
+  b: number,
+  k: number,
+  delta: number,
+  eliminated: boolean[]
+): number {
+  const activeIndices = q.map((_, i) => i).filter((i) => !eliminated[i]);
+  if (!activeIndices.includes(k)) return Infinity; // Can't trade eliminated option
+
+  const costBefore = costFunctionActive(q, b, activeIndices);
+  const qPrime = q.map((qi, i) => (i === k ? qi + delta : qi));
+  const costAfter = costFunctionActive(qPrime, b, activeIndices);
+  return costAfter - costBefore;
+}
+
+/**
+ * Cost function computed only over active indices.
+ */
+function costFunctionActive(q: number[], b: number, activeIndices: number[]): number {
+  const activeQ = activeIndices.map((i) => q[i]);
+  const maxQ = Math.max(...activeQ);
+  const sumExp = activeQ.reduce((acc, qi) => acc + Math.exp((qi - maxQ) / b), 0);
+  return b * (maxQ / b + Math.log(sumExp));
+}
+
+/**
+ * Compute shares for a given cost, considering eliminated options.
+ */
+export function sharesForCostWithEliminated(
+  q: number[],
+  b: number,
+  k: number,
+  kcAmount: number,
+  eliminated: boolean[]
+): number {
+  let lo = 0;
+  let hi = kcAmount * 20;
+  const maxIter = 100;
+  const tolerance = 0.0001;
+
+  for (let i = 0; i < maxIter; i++) {
+    const mid = (lo + hi) / 2;
+    const cost = tradeCostWithEliminated(q, b, k, mid, eliminated);
+    if (Math.abs(cost - kcAmount) < tolerance) return mid;
+    if (cost < kcAmount) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
