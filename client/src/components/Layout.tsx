@@ -55,7 +55,7 @@ const ADMIN_NAV = [
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin, logout, refreshUser } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,10 +69,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await queryClient.invalidateQueries();
-    // Small delay so spinner is visible
-    setTimeout(() => setRefreshing(false), 600);
-  }, []);
+    try {
+      // Force refetch all active queries (ignore staleTime)
+      await queryClient.refetchQueries({ type: 'active' });
+      // Also refresh user auth data (balance, stats, etc.)
+      await refreshUser();
+    } catch { /* ignore errors */ }
+    setRefreshing(false);
+  }, [refreshUser]);
 
   const isAdminPage = location.startsWith("/admin");
 
