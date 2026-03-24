@@ -65,6 +65,16 @@ function AppRouter() {
   );
 }
 
+// Redirect non-hash URLs to hash-based routes (fixes referral links, shared links, etc.)
+// e.g. /login?ref=CODE → /#/login?ref=CODE
+(function redirectToHash() {
+  const { pathname, search, hash } = window.location;
+  if (pathname !== '/' && !hash) {
+    // The URL has a path but no hash — convert path to hash route
+    window.location.replace(`${window.location.origin}/#${pathname}${search}`);
+  }
+})();
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
