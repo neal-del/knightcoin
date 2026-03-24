@@ -283,7 +283,7 @@ function MultiOptionResolver({ market, resolving, setResolving }: {
                   {Math.round(opt.price * 100)}¢
                 </span>
               </button>
-              {isExclusive && activeOptions.length > 2 && (
+              {isExclusive && activeOptions.length >= 2 && (
                 <button
                   type="button"
                   onClick={() => eliminateOption(opt.id)}

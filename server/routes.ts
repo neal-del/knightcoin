@@ -771,8 +771,13 @@ export async function registerRoutes(
       if (bet.position === "yes" || bet.position === "no") {
         // Binary bet
         currentPrice = bet.position === "yes" ? market.yesPrice : market.noPrice;
+      } else if (bet.position.endsWith(':no')) {
+        // Non-exclusive NO bet — position is "optionId:no"
+        const baseId = bet.position.replace(':no', '');
+        const option = optionMap.get(baseId);
+        currentPrice = option ? (1 - option.price) : 0;
       } else {
-        // Multi-option bet — position stores the optionId
+        // Multi-option YES bet — position stores the optionId
         const option = optionMap.get(bet.position);
         currentPrice = option ? option.price : 0;
       }
@@ -1063,6 +1068,9 @@ export async function registerRoutes(
         let positionLabel: string;
         if (bet.position === "yes" || bet.position === "no") {
           positionLabel = bet.position.toUpperCase();
+        } else if (bet.position.endsWith(':no')) {
+          const baseId = bet.position.replace(':no', '');
+          positionLabel = `NO ${optionLabelMap.get(baseId) || baseId}`;
         } else {
           positionLabel = optionLabelMap.get(bet.position) || bet.position;
         }
@@ -1221,10 +1229,12 @@ export async function registerRoutes(
     if (!userId) return res.status(401).json({ error: "Not authenticated" });
 
     try {
-      const { marketId, optionId, amount } = req.body;
+      let { marketId, optionId, amount, side } = req.body;
       if (!marketId || !optionId || !amount) {
         return res.status(400).json({ error: "marketId, optionId, and amount are required" });
       }
+      // side defaults to 'yes' (buy YES on the option)
+      const betSide: 'yes' | 'no' = side === 'no' ? 'no' : 'yes';
       if (amount <= 0) return res.status(400).json({ error: "Amount must be positive" });
 
       const user = await storage.getUser(userId);
@@ -1262,10 +1272,36 @@ export async function registerRoutes(
         const b = market.lmsrB ?? DEFAULT_LMSR_B;
         const q = allOptions.map((o) => o.qValue ?? 0);
         const eliminatedFlags = allOptions.map((o) => o.resolved);
+        const currentPrices = priceVectorWithEliminated(q, b, eliminatedFlags);
 
         // Compute how many shares the user gets for their KC (skip eliminated)
         sharesReceived = sharesForCostWithEliminated(q, b, selectedIdx, amount, eliminatedFlags);
-        executionPrice = sharesReceived > 0 ? amount / sharesReceived : option.price;
+
+        // Cap price movement: no single option can move more than 5¢ per bet
+        const MAX_PRICE_MOVE = 0.05;
+        let cappedShares = sharesReceived;
+        let trialQ = q.map((qi, i) => (i === selectedIdx ? qi + cappedShares : qi));
+        let trialPrices = priceVectorWithEliminated(trialQ, b, eliminatedFlags);
+        const maxMove = Math.max(...trialPrices.map((p, i) => Math.abs(p - currentPrices[i])));
+        if (maxMove > MAX_PRICE_MOVE && cappedShares > 0) {
+          // Binary search for the share amount that produces exactly 5¢ max movement
+          let lo = 0, hi = cappedShares;
+          for (let iter = 0; iter < 50; iter++) {
+            const mid = (lo + hi) / 2;
+            const tQ = q.map((qi, i) => (i === selectedIdx ? qi + mid : qi));
+            const tP = priceVectorWithEliminated(tQ, b, eliminatedFlags);
+            const tMove = Math.max(...tP.map((p, i) => Math.abs(p - currentPrices[i])));
+            if (tMove > MAX_PRICE_MOVE) hi = mid;
+            else lo = mid;
+          }
+          cappedShares = lo;
+        }
+        // Recompute cost for capped shares
+        const actualCost = cappedShares > 0 ? tradeCostWithEliminated(q, b, selectedIdx, cappedShares, eliminatedFlags) : 0;
+        sharesReceived = cappedShares;
+        executionPrice = sharesReceived > 0 ? actualCost / sharesReceived : option.price;
+        // Refund unused KC (if trade was capped)
+        const refund = amount - actualCost;
 
         // Update q vector
         const newQ = q.map((qi, i) => (i === selectedIdx ? qi + sharesReceived : qi));
@@ -1280,20 +1316,36 @@ export async function registerRoutes(
             });
           }
         }
+
+        // Adjust the deducted amount to only charge actualCost
+        // (We override `amount` so the rest of the route uses the correct value)
+        if (refund > 0.01) {
+          amount = +actualCost.toFixed(2);
+        }
       } else {
-        // ═══════ Non-exclusive: independent pricing (legacy) ═══════
+        // ═══════ Non-exclusive: independent pricing (like binary YES/NO per option) ═══════
         const impact = Math.min(amount / 1000, 0.05);
-        const newPrice = Math.min(0.95, allOptions[selectedIdx].price + impact);
-        await storage.updateMarketOption(allOptions[selectedIdx].id, { price: +newPrice.toFixed(4) });
-        executionPrice = option.price;
+        if (betSide === 'yes') {
+          const newPrice = Math.min(0.95, allOptions[selectedIdx].price + impact);
+          await storage.updateMarketOption(allOptions[selectedIdx].id, { price: +newPrice.toFixed(4) });
+          executionPrice = option.price;
+        } else {
+          // NO bet: price is 1 - option.price, moves option price DOWN
+          const newPrice = Math.max(0.05, allOptions[selectedIdx].price - impact);
+          await storage.updateMarketOption(allOptions[selectedIdx].id, { price: +newPrice.toFixed(4) });
+          executionPrice = 1 - option.price;
+        }
         sharesReceived = amount / executionPrice;
       }
 
-      // Create the bet — position stores the optionId, price is execution price
+      // Create the bet — for non-exclusive NO bets, store position as "optionId:no"
+      const positionKey = (market.exclusiveMulti === false && betSide === 'no')
+        ? `${optionId}:no`
+        : optionId;
       const bet = await storage.createBet({
         userId,
         marketId,
-        position: optionId,
+        position: positionKey,
         amount,
         price: +executionPrice.toFixed(6),
         createdAt: new Date().toISOString(),
@@ -1310,17 +1362,18 @@ export async function registerRoutes(
         userId,
         type: "bet_placed",
         amount: -amount,
-        description: `Bet ${amount} KC on "${option.label}" for "${market.title}"`,
+        description: `Bet ${amount} KC on ${betSide.toUpperCase()} "${option.label}" for "${market.title}"`,
         createdAt: new Date().toISOString(),
       });
 
       // Auto chat message for live transaction feed
       try {
+        const sideLabel = betSide === 'no' ? ' NO on' : '';
         await storage.createChatMessage({
           marketId,
           userId: "__system__",
           displayName: "Trade Feed",
-          content: `${user.displayName} staked ${amount} KC on "${option.label}"`,
+          content: `${user.displayName} staked ${amount} KC on${sideLabel} "${option.label}"`,
           createdAt: new Date().toISOString(),
         });
       } catch (_) { /* non-critical */ }
@@ -1350,10 +1403,10 @@ export async function registerRoutes(
       if (!target) return res.status(400).json({ error: "Option not found" });
       if (target.resolved) return res.status(400).json({ error: "Option already resolved" });
 
-      // Check we're not eliminating the last active option
+      // Check we're not eliminating the very last active option
       const activeOptions = allOptions.filter((o) => !o.resolved);
-      if (activeOptions.length <= 2) {
-        return res.status(400).json({ error: "Cannot eliminate — need at least 2 active options. Use full market resolution instead." });
+      if (activeOptions.length < 2) {
+        return res.status(400).json({ error: "Cannot eliminate — no active options left. Use full market resolution instead." });
       }
 
       // 1. Mark the option as resolved + not winner (eliminated)
@@ -1500,7 +1553,12 @@ export async function registerRoutes(
     const winnerLabels = options.filter((o) => winnerSet.has(o.id)).map((o) => o.label);
 
     for (const bet of unsettledBets) {
-      const won = winnerSet.has(bet.position);
+      // Handle NO positions: "optionId:no" means bet wins if option is NOT a winner
+      const isNoBet = bet.position.endsWith(':no');
+      const baseOptionId = isNoBet ? bet.position.replace(':no', '') : bet.position;
+      const optionWon = winnerSet.has(baseOptionId);
+      const won = isNoBet ? !optionWon : optionWon;
+
       if (won) {
         const payout = bet.amount / bet.price;
         await storage.settleBet(bet.id, payout);
@@ -1512,12 +1570,13 @@ export async function registerRoutes(
             correctPredictions: betUser.correctPredictions + 1,
           });
         }
-        const betOptionLabel = options.find((o) => o.id === bet.position)?.label || "option";
+        const betOptionLabel = options.find((o) => o.id === baseOptionId)?.label || "option";
+        const sideLabel = isNoBet ? 'NO ' : '';
         await storage.createTransaction({
           userId: bet.userId,
           type: "payout",
           amount: payout,
-          description: `Won ${payout.toFixed(1)} KC on "${betOptionLabel}" bet`,
+          description: `Won ${payout.toFixed(1)} KC on ${sideLabel}"${betOptionLabel}" bet`,
           createdAt: new Date().toISOString(),
         });
       } else {

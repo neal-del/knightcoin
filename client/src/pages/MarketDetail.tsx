@@ -31,6 +31,7 @@ export default function MarketDetail() {
   const { toast } = useToast();
   const [position, setPosition] = useState<"yes" | "no">("yes");
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [betSide, setBetSide] = useState<"yes" | "no">("yes"); // for non-exclusive multi options
   const [amount, setAmount] = useState("");
   const [placing, setPlacing] = useState(false);
   const [quoteShares, setQuoteShares] = useState<number | null>(null);
@@ -97,6 +98,7 @@ export default function MarketDetail() {
           marketId: params?.id,
           optionId: selectedOption,
           amount: amt,
+          ...(isExclusiveMulti ? {} : { side: betSide }),
         });
       } else {
         await apiRequest("POST", "/api/bets", {
@@ -154,7 +156,11 @@ export default function MarketDetail() {
   const yesPercent = Math.round(market.yesPrice * 100);
   const noPercent = Math.round(market.noPrice * 100);
   const selectedOpt = options?.find((o) => o.id === selectedOption);
-  const selectedPrice = isMulti ? (selectedOpt?.price || 0.5) : (position === "yes" ? market.yesPrice : market.noPrice);
+  const isNonExclusiveNo = isMulti && !isExclusiveMulti && betSide === 'no';
+  const baseOptPrice = selectedOpt?.price || 0.5;
+  const selectedPrice = isMulti
+    ? (isNonExclusiveNo ? (1 - baseOptPrice) : baseOptPrice)
+    : (position === "yes" ? market.yesPrice : market.noPrice);
   // Use LMSR quote for exclusive multi, else simple division
   const rawPayout = (isExclusiveMulti && quoteShares != null) ? quoteShares : (amount ? parseFloat(amount) / selectedPrice : 0);
   const potentialPayout = rawPayout.toFixed(2);
@@ -228,7 +234,14 @@ export default function MarketDetail() {
                   <div key={opt.id} className={`rounded-xl border p-3 ${color}`} data-testid={`option-price-${opt.id}`}>
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">{opt.label}</span>
-                      <span className="text-lg font-bold tabular-nums">{pct}¢</span>
+                      {!isExclusiveMulti ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-emerald-400 font-semibold tabular-nums">Y {pct}¢</span>
+                          <span className="text-xs text-rose-400 font-semibold tabular-nums">N {100 - pct}¢</span>
+                        </div>
+                      ) : (
+                        <span className="text-lg font-bold tabular-nums">{pct}¢</span>
+                      )}
                     </div>
                     <div className="mt-1.5 h-2 bg-muted/30 rounded-full overflow-hidden">
                       <div className="h-full rounded-full bg-current opacity-40" style={{ width: `${pct}%` }} />
@@ -347,6 +360,31 @@ export default function MarketDetail() {
                     </button>
                   );
                 })}
+                {/* YES/NO toggle for non-exclusive markets */}
+                {!isExclusiveMulti && selectedOption && (
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    <button
+                      onClick={() => setBetSide("yes")}
+                      className={`py-2 rounded-lg text-xs font-semibold transition-all ${
+                        betSide === "yes"
+                          ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                          : "bg-muted/30 text-muted-foreground border border-transparent hover:bg-muted/50"
+                      }`}
+                    >
+                      Buy Yes — {Math.round((selectedOpt?.price || 0.5) * 100)}¢
+                    </button>
+                    <button
+                      onClick={() => setBetSide("no")}
+                      className={`py-2 rounded-lg text-xs font-semibold transition-all ${
+                        betSide === "no"
+                          ? "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                          : "bg-muted/30 text-muted-foreground border border-transparent hover:bg-muted/50"
+                      }`}
+                    >
+                      Buy No — {Math.round((1 - (selectedOpt?.price || 0.5)) * 100)}¢
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-2">
@@ -426,7 +464,11 @@ export default function MarketDetail() {
               className="w-full font-semibold"
               data-testid="button-place-bet"
             >
-              {placing ? "Placing..." : isMulti ? (selectedOpt ? `Buy "${selectedOpt.label}"` : "Select an option") : `Buy ${position.toUpperCase()}`}
+              {placing ? "Placing..." : isMulti
+                ? (selectedOpt
+                  ? (isExclusiveMulti ? `Buy "${selectedOpt.label}"` : `Buy ${betSide.toUpperCase()} "${selectedOpt.label}"`)
+                  : "Select an option")
+                : `Buy ${position.toUpperCase()}`}
             </Button>
 
             {!user && (
